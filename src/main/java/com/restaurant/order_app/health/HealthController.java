@@ -8,7 +8,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/health")
 public class HealthController {
 
-    private final HealthService service = new HealthService();
+    private final HealthService service;
+
+    public HealthController(HealthService service) {
+        this.service = service;
+    }
 
     @GetMapping
     public HealthResponse health() {
