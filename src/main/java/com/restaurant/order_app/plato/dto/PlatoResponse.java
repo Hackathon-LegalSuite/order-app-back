@@ -18,5 +18,6 @@ public class PlatoResponse {
     private BigDecimal precio;
     private String categoria;
     private Boolean preparada;
+    private String imagenUrl;
     private List<IngredienteEnPlatoResponse> ingredientes;
 }
