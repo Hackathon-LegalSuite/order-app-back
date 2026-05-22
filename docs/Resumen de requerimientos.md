@@ -532,3 +532,17 @@ despacho/
 | `PATCH /cocina/items/{itemId}/estado` | — | ✅ | — |
 | `GET /despacho/platos` | — | ✅ | ✅ |
 | `PATCH /despacho/items/{itemId}/estado` | — | — | ✅ |
+
+---
+
+## 📋 Criterios mínimos Hackathon — Estado de cumplimiento
+
+| Criterio | Estado | Detalle |
+|----------|--------|---------|
+| **B1 Estructura por capas** | ✅ Cumplido | Controller → Service → Repository → Entity en cada módulo |
+| **B2 Endpoints RESTful** | ⚠️ En progreso | Auth implementado. Faltan platos, pedidos, cocina, despacho |
+| **B3 DTOs y validaciones** | ✅ Cumplido | DTOs separados de entidades, `@NotBlank` en requests, `@JsonInclude` en responses |
+| **B4 Manejo de excepciones** | ✅ Cumplido | `GlobalExceptionHandler` cubre 401, 404 y 500 con estructura uniforme |
+| **B5 Persistencia con JPA** | ⚠️ En progreso | `Usuario` y `Mesa` operativos. Faltan entidades de pasos 3 y 4 |
+| **B6 Configuración limpia** | ✅ Cumplido | Perfiles dev/prod separados, env vars, sin credenciales en el repo |
+| **B7 Normalización BD + modelo ER** | ⚠️ En progreso | Relación `Mesa → Usuario` normalizada. Modelo completo al finalizar todos los pasos |
