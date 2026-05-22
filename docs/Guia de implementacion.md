@@ -11,14 +11,43 @@ Cada paso es un bloque entregable. Completá uno antes de pasar al siguiente.
 1. Ingresá a [render.com](https://render.com) → **New** → **PostgreSQL**
 2. Nombre: `order-app-db` — Free tier
 3. Render te entrega:
-   - **Internal Database URL** (para usar desde el mismo servicio en Render)
-   - **External Database URL** (para conectarte desde tu máquina local si querés)
-4. Guardá el **Internal Database URL** — lo vas a usar como variable de entorno
+   - **Internal Database URL** — para el servicio desplegado en Render
+   - **External Database URL** — para conectarte desde tu máquina o editor local
+4. Convertir la URL al formato JDBC: `postgresql://...` → `jdbc:postgresql://...`
 
-### 1.2 Configurar perfiles de Spring Boot
+### 1.2 Perfiles de Spring Boot
 
-Creá el archivo `src/main/resources/application-prod.yml`:
+| Perfil | Archivo | Base de datos | Cómo activar |
+|--------|---------|---------------|--------------|
+| `default` (dev) | `application.yml` | H2 en memoria | `./mvnw spring-boot:run` |
+| `prod` | `application-prod.yml` | PostgreSQL | `SPRING_PROFILES_ACTIVE=prod` |
 
+**`application.yml`** (dev):
+```yaml
+spring:
+  application:
+    name: order-app-back
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+  sql:
+    init:
+      mode: never
+server:
+  port: ${PORT:8080}
+```
+
+**`application-prod.yml`** (producción):
 ```yaml
 spring:
   datasource:
@@ -26,105 +55,57 @@ spring:
     username: ${DB_USER}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
-
   jpa:
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
     show-sql: false
-
+    open-in-view: false
+    defer-datasource-initialization: true
   sql:
     init:
-      mode: always
-
-  jpa:
-    defer-datasource-initialization: true
+      mode: never
 ```
 
-> `defer-datasource-initialization: true` es obligatorio cuando usás JPA + `data.sql`. Sin esto, Spring intenta ejecutar el SQL antes de que Hibernate cree las tablas.
-
-El `application.yml` existente (H2) sigue siendo el perfil de desarrollo. En Render configurás la variable de entorno `SPRING_PROFILES_ACTIVE=prod`.
+> `sql.init.mode: never` en ambos perfiles — el seed data se carga manualmente una sola vez por paso.
 
 ### 1.3 Variables de entorno en Render
-
-En el servicio de Render → **Environment** → agregar:
 
 | Variable | Valor |
 |----------|-------|
 | `SPRING_PROFILES_ACTIVE` | `prod` |
-| `DB_URL` | `jdbc:postgresql://<host>/<db>` (del Internal URL) |
+| `DB_URL` | `jdbc:postgresql://<internal-host>/<dbname>` |
 | `DB_USER` | usuario de Render |
 | `DB_PASSWORD` | contraseña de Render |
+| `JWT_SECRET` | cadena aleatoria de mínimo 32 caracteres |
 
-### 1.4 Seed data
+### 1.4 Ejecución local contra la BD de Render
 
-Creá `src/main/resources/data.sql` con los datos iniciales. Este archivo se ejecuta automáticamente en cada inicio cuando `sql.init.mode=always`.
-
-Orden obligatorio por dependencias de FK:
-
-```sql
--- 1. Usuarios (cocineros y meseros)
-INSERT INTO usuarios (id, username, password, nombre, rol)
-VALUES
-  (1, 'cocinero01', '$2a$10$...', 'Carlos',  'COCINERO'),
-  (2, 'mesero01',   '$2a$10$...', 'Álvaro',  'MESERO'),
-  (3, 'mesero02',   '$2a$10$...', 'Deivy',   'MESERO')
-ON CONFLICT (id) DO NOTHING;
-
--- 2. Mesas (requiere mesero FK)
-INSERT INTO mesas (id, numero, codigo_qr, mesero_id)
-VALUES
-  (1, 1, 'MESA-01', 2),
-  (2, 2, 'MESA-02', 2),
-  (3, 3, 'MESA-03', 3),
-  (4, 4, 'MESA-04', 3),
-  (5, 5, 'MESA-05', 2)
-ON CONFLICT (id) DO NOTHING;
-
--- 3. Ingredientes
-INSERT INTO ingredientes (id, nombre) VALUES
-  (1, 'Carne de res'),
-  (2, 'Lechuga'),
-  (3, 'Tomate'),
-  (4, 'Cebolla'),
-  (5, 'Pan'),
-  (6, 'Arroz'),
-  (7, 'Fríjoles'),
-  (8, 'Chicharrón'),
-  (9, 'Limón'),
-  (10, 'Coco')
-ON CONFLICT (id) DO NOTHING;
-
--- 4. Platos
-INSERT INTO platos (id, nombre, descripcion, precio, categoria, preparada) VALUES
-  (1, 'Hamburguesa Clásica', 'Carne de res, lechuga, tomate y papas fritas', 18500, 'PLATO_FUERTE', null),
-  (2, 'Bandeja Paisa',       'Arroz, fríjoles, chicharrón y carne',          32000, 'PLATO_FUERTE', null),
-  (7, 'Limonada de Coco',    'Limonada natural con coco',                     8000, 'BEBIDA',        true)
-ON CONFLICT (id) DO NOTHING;
-
--- 5. Relación plato-ingrediente
-INSERT INTO plato_ingredientes (id, plato_id, ingrediente_id, obligatorio) VALUES
-  (1, 1, 1, true),
-  (2, 1, 2, false),
-  (3, 1, 3, false),
-  (4, 1, 4, false),
-  (5, 2, 6, true),
-  (6, 2, 7, true),
-  (7, 2, 8, true),
-  (8, 7, 9, true),
-  (9, 7, 10, true)
-ON CONFLICT (id) DO NOTHING;
+Crear `.env` en la raíz (ignorado por git):
+```
+SPRING_PROFILES_ACTIVE=prod
+DB_URL=jdbc:postgresql://<external-host>/<dbname>
+DB_USER=<usuario>
+DB_PASSWORD=<contraseña>
+JWT_SECRET=<clave-secreta>
 ```
 
-> Las contraseñas en `data.sql` deben estar hasheadas con BCrypt. Podés generarlas con un [BCrypt generator online](https://bcrypt-generator.com/) o con un test de Spring.
+Crear `run-local.ps1` en la raíz (ignorado por git):
+```powershell
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^([^#][^=]+)=(.+)$') {
+        [System.Environment]::SetEnvironmentVariable($Matches[1].Trim(), $Matches[2].Trim(), 'Process')
+    }
+}
+./mvnw spring-boot:run
+```
+
+Ejecutar con: `.\run-local.ps1`
 
 ---
 
 ## Paso 2 — Autenticación
 
-### Dependencias necesarias
-
-Agregar en `pom.xml`:
+### Dependencias a agregar en `pom.xml`
 
 ```xml
 <dependency>
@@ -154,44 +135,58 @@ Agregar en `pom.xml`:
 
 ```
 usuario/
-├── Usuario.java              → @Entity con campos: id, username, password, nombre, rol
+├── Usuario.java              → @Entity — implementa UserDetails para Spring Security
 ├── UsuarioRepository.java    → findByUsername(String username)
 └── Rol.java                  → @Enum: COCINERO, MESERO
 
 mesa/
 ├── Mesa.java                 → @Entity con campos: id, numero, codigoQr, mesero (FK Usuario)
-└── MesaRepository.java       → findByCodigoQr(String codigoQr)
+└── MesaRepository.java       → findById(Long id) — heredado de JpaRepository
 
 auth/
 ├── AuthController.java
 ├── AuthService.java
-├── JwtUtil.java
+├── JwtUtil.java              → genera y valida tokens JWT
 ├── JwtFilter.java            → OncePerRequestFilter — valida token en cada request
-├── SecurityConfig.java       → configura rutas públicas y protegidas
-├── ClienteAuthRequest.java   → DTO: nombre, codigoMesa
-├── StaffAuthRequest.java     → DTO: username, password
-└── AuthResponse.java         → DTO: token, rol, nombre, mesaId, expiresIn
+├── AuthEntryPoint.java       → respuesta 401 estructurada cuando el JWT falla o no existe
+├── SecurityConfig.java       → rutas públicas, sesión stateless, registro de filtros
+└── dto/
+    ├── ClienteAuthRequest.java   → nombre, codigoMesa
+    ├── StaffAuthRequest.java     → username, password
+    └── AuthResponse.java         → token, rol, nombre, mesaId, expiresIn
 ```
+
+> `@SpringBootApplication(exclude = {UserDetailsServiceAutoConfiguration.class})` en la clase principal para eliminar el warning del password generado automáticamente.
 
 ### Endpoints implementados
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| `POST` | `/auth/cliente` | Valida nombre + codigoMesa → genera JWT con mesaId en claims |
-| `POST` | `/auth/login` | Valida username + password → genera JWT con rol en claims |
+| `POST` | `/auth/cliente/{mesaId}` | Valida que el codigoMesa del body corresponda a la mesa del path. Genera JWT de 6h con mesaId en claims |
+| `POST` | `/auth/login` | Valida username + password (BCrypt). Genera JWT con rol en claims |
 
-### Configuración clave
+### Notas de implementación
 
-- `SecurityConfig` debe permitir sin autenticación: `POST /auth/**`
-- El resto de rutas requieren JWT válido
-- El `JwtFilter` extrae el rol del token y arma el `SecurityContext`
-- JWT secreto como variable de entorno: `JWT_SECRET`
+- El `JwtFilter` distingue token expirado (`ExpiredJwtException`) de token inválido y marca el error como atributo del request
+- El `AuthEntryPoint` lee ese atributo y devuelve el mensaje correcto con status 401
+- Contraseñas en BD deben estar hasheadas con BCrypt — generarlas en [bcrypt.online](https://bcrypt.online) con cost 10
 
-### Variable de entorno adicional
+### Script de seed (ejecutar una vez en el editor)
 
-| Variable | Valor |
-|----------|-------|
-| `JWT_SECRET` | cadena aleatoria de 32+ caracteres |
+```sql
+INSERT INTO usuarios (id, username, password, nombre, rol) VALUES
+  (1, 'cocinero01', '<hash-bcrypt-de-1234>', 'Carlos', 'COCINERO'),
+  (2, 'mesero01',   '<hash-bcrypt-de-1234>', 'Álvaro', 'MESERO'),
+  (3, 'mesero02',   '<hash-bcrypt-de-1234>', 'Deivy',  'MESERO');
+
+INSERT INTO mesas (id, numero, codigo_qr, mesero_id) VALUES
+  (1, 1, 'MESA-01', 2),
+  (2, 2, 'MESA-02', 2),
+  (3, 3, 'MESA-03', 3),
+  (4, 4, 'MESA-04', 3),
+  (5, 5, 'MESA-05', 2);
+
+```
 
 ---
 
@@ -201,33 +196,82 @@ auth/
 
 ```
 ingrediente/
-├── Ingrediente.java          → @Entity con @ElementCollection para caracteristicas
+├── Ingrediente.java            → @Entity con relación @ManyToMany a Caracteristica
 ├── IngredienteRepository.java
-└── Caracteristica.java       → @Enum: PICANTE, SALADO, DULCE, ACIDO, AMARGO, ALCOHOL, CALIENTE, FRIO, VEGETARIANO
+└── Caracteristica.java         → @Entity (no enum) — permite agregar características desde BD sin tocar código
 
 plato/
-├── Plato.java                → @Entity
-├── PlatoIngrediente.java     → @Entity tabla intermedia (plato, ingrediente, obligatorio)
-├── PlatoIngredienteRepository.java
-├── PlatoRepository.java      → findByCategoria(Categoria categoria)
+├── Plato.java                  → @Entity — incluye campo imagenUrl
+├── PlatoIngrediente.java       → @Entity tabla intermedia (plato, ingrediente, obligatorio)
+├── PlatoRepository.java        → findByCategoria(Categoria categoria)
 ├── PlatoService.java
 ├── PlatoController.java
-├── Categoria.java            → @Enum: ENTRADA, BEBIDA, PLATO_FUERTE, POSTRE
-└── PlatoResponse.java        → DTO de respuesta con lista de ingredientes
+├── Categoria.java              → @Enum: ENTRADA, BEBIDA, PLATO_FUERTE, POSTRE
+└── dto/
+    ├── PlatoResponse.java          → id, nombre, descripcion, precio, categoria, preparada, imagenUrl, ingredientes
+    └── IngredienteEnPlatoResponse.java → id, nombre, obligatorio
 ```
 
-### Endpoints implementados
+> `Caracteristica` es una entidad con su propia tabla, no un enum. Esto permite agregar nuevas características insertando en BD sin necesidad de deploy.
 
-| Método | Endpoint | Acceso |
-|--------|----------|--------|
-| `GET` | `/platos` | CLIENTE (JWT válido) |
-| `GET` | `/platos/{id}` | CLIENTE |
-| `GET` | `/platos/categoria/{categoria}` | CLIENTE |
+### Endpoints implementados en este paso
+
+| Método | Endpoint | Acceso | Descripción |
+|--------|----------|--------|-------------|
+| `GET` | `/platos` | CLIENTE | Retorna todos los platos del menú con ingredientes y flag obligatorio |
+| `GET` | `/platos/{id}` | CLIENTE | Retorna el detalle de un plato específico por su ID |
+| `GET` | `/platos/categoria/{categoria}` | CLIENTE | Filtra platos por categoría: `ENTRADA`, `BEBIDA`, `PLATO_FUERTE`, `POSTRE` |
 
 ### Notas de implementación
 
-- La respuesta incluye la lista de ingredientes con su flag `obligatorio` — esto viene de `PlatoIngrediente`, no de `Ingrediente` directamente
-- `preparada` solo aplica a `BEBIDA`, puede ser `null` en otros casos
+- `obligatorio` viene de `PlatoIngrediente`, no de `Ingrediente`
+- `preparada` y `imagenUrl` usan `@JsonInclude(NON_NULL)` — no aparecen si son null
+- La relación `ingrediente_caracteristicas` es una tabla ManyToMany entre `Ingrediente` y `Caracteristica`
+
+### Script de seed (ejecutar una vez en el editor)
+
+```sql
+
+CREATE TABLE ingrediente_caracteristicas (
+    ingrediente_id    BIGINT NOT NULL REFERENCES ingredientes(id),
+    caracteristica_id BIGINT NOT NULL REFERENCES caracteristicas(id),
+    PRIMARY KEY (ingrediente_id, caracteristica_id)
+);
+
+INSERT INTO caracteristicas (id, nombre) VALUES
+  (1,'Picante'),(2,'Salado'),(3,'Dulce'),
+  (4,'Acido'),(5,'Amargo'),(6,'Alcohol'),
+  (7,'Caliente'),(8,'Frio'),(9,'Vegetariano');
+
+INSERT INTO ingredientes (id, nombre) VALUES
+  (1,'Carne de res'),(2,'Lechuga'),(3,'Tomate'),
+  (4,'Cebolla'),(5,'Pan'),(6,'Arroz'),
+  (7,'Fríjoles'),(8,'Chicharrón'),(9,'Limón'),(10,'Coco');
+
+INSERT INTO platos (id, nombre, descripcion, precio, categoria, preparada) VALUES
+  (1,'Hamburguesa Clásica','Carne de res, lechuga, tomate y papas fritas',18500,'PLATO_FUERTE',null),
+  (2,'Bandeja Paisa','Arroz, fríjoles, chicharrón y carne',32000,'PLATO_FUERTE',null),
+  (3,'Ensalada César','Lechuga, tomate, crutones y aderezo',9500,'ENTRADA',null),
+  (4,'Limonada de Coco','Limonada natural con coco',8000,'BEBIDA',true),
+  (5,'Agua Mineral','Agua mineral embotellada',3000,'BEBIDA',false);
+
+INSERT INTO plato_ingredientes (plato_id, ingrediente_id, obligatorio) VALUES
+  (1,1,true),(1,2,false),(1,3,false),(1,4,false),(1,5,true),
+  (2,1,true),(2,6,true),(2,7,true),(2,8,true),
+  (3,2,true),(3,3,false),
+  (4,9,true),(4,10,true),
+  (5,9,false);
+
+INSERT INTO ingrediente_caracteristicas (ingrediente_id, caracteristica_id) VALUES
+  (1,2),(1,7),(2,9),(3,9),(3,4),(4,9),(4,1),
+  (5,9),(6,9),(7,9),(8,2),(9,4),(9,3),(10,3),(10,9);
+
+ALTER TABLE caracteristicas ALTER COLUMN id RESTART WITH 100;
+ALTER TABLE ingredientes ALTER COLUMN id RESTART WITH 100;
+ALTER TABLE platos ALTER COLUMN id RESTART WITH 100;
+```
+
+> Para cargar imágenes en los platos: `UPDATE platos SET imagen_url = '<url>' WHERE id = <id>;`
 
 ---
 
@@ -247,23 +291,23 @@ pedido/
 ├── PedidoRepository.java     → findByMesaId(Long mesaId)
 ├── PedidoService.java
 ├── PedidoController.java
-├── CrearPedidoRequest.java   → DTO: mesaId, clienteNombre, items[]
-├── ItemRequest.java          → DTO: platoId, ingredientesExcluidos[]
-└── PedidoResponse.java       → DTO de respuesta
+└── dto/
+    ├── CrearPedidoRequest.java   → mesaId, clienteNombre, items[]
+    ├── ItemRequest.java          → platoId, ingredientesExcluidos[]
+    └── PedidoResponse.java
 ```
 
 ### Endpoints implementados
 
-| Método | Endpoint | Acceso |
-|--------|----------|--------|
-| `POST` | `/pedidos` | CLIENTE |
-| `GET`  | `/pedidos/mesa/{mesaId}` | CLIENTE |
+| Método | Endpoint | Acceso | Descripción |
+|--------|----------|--------|-------------|
+| `POST` | `/pedidos` | CLIENTE | Crea un nuevo pedido desde la mesa. Valida ingredientes excluidos y mesaId del JWT |
+| `GET`  | `/pedidos/mesa/{mesaId}` | CLIENTE | Retorna todos los pedidos activos de la mesa con el estado actual de cada ítem |
 
 ### Validaciones obligatorias
 
-- Al crear el pedido, verificar que cada `ingredienteId` en `ingredientesExcluidos` tenga `obligatorio: false` en `PlatoIngrediente`
-- Si alguno tiene `obligatorio: true` → `400 Bad Request` con mensaje descriptivo
-- El `mesaId` del JWT del cliente debe coincidir con el `mesaId` del body
+- `ingredientesExcluidos` solo puede contener IDs con `obligatorio: false` en `PlatoIngrediente` → si no, `400`
+- El `mesaId` del JWT debe coincidir con el `mesaId` del body
 
 ---
 
@@ -275,29 +319,22 @@ pedido/
 cocina/
 ├── CocinaController.java     → /cocina/platos, /cocina/items/{itemId}/estado
 ├── CocinaService.java
-└── CocinaItemResponse.java   → DTO: itemId, pedidoId, mesa, clienteNombre, plato, ingredientesExcluidos, estado
+└── dto/
+    └── CocinaItemResponse.java   → itemId, pedidoId, mesa, clienteNombre, plato, ingredientesExcluidos, estado
 ```
 
 ### Endpoints implementados
 
-| Método | Endpoint | Acceso |
-|--------|----------|--------|
-| `GET`  | `/cocina/platos` | COCINERO |
-| `PATCH`| `/cocina/items/{itemId}/estado` | COCINERO |
+| Método | Endpoint | Acceso | Descripción |
+|--------|----------|--------|-------------|
+| `GET`  | `/cocina/platos` | COCINERO | Lista todos los ítems en preparación (EN_ESPERA o EN_PROGRESO) de todos los pedidos activos |
+| `PATCH`| `/cocina/items/{itemId}/estado` | COCINERO | Avanza el estado de un ítem. Solo permite EN_ESPERA → EN_PROGRESO → LISTO |
 
-### Notas de implementación
-
-- `GET /cocina/platos` filtra `ItemPedido` donde `estado IN (EN_ESPERA, EN_PROGRESO)`
-- `PATCH` valida que la transición sea válida (solo avanzar, solo hasta `LISTO`)
-- Un `COCINERO` que intente hacer `LISTO → ENTREGADO` → `400 Bad Request`
-
-### Lógica de transición (en `ItemService`)
+### Lógica de transición
 
 ```
-EN_ESPERA   → puede avanzar a: EN_PROGRESO
-EN_PROGRESO → puede avanzar a: LISTO
-LISTO       → no puede ser modificado por COCINERO
-ENTREGADO   → estado final, no modificable
+EN_ESPERA → EN_PROGRESO → LISTO   (solo COCINERO)
+LISTO → no modificable por COCINERO
 ```
 
 ---
@@ -310,22 +347,22 @@ ENTREGADO   → estado final, no modificable
 despacho/
 ├── DespachoController.java   → /despacho/platos, /despacho/items/{itemId}/estado
 ├── DespachoService.java
-└── DespachoItemResponse.java → DTO: itemId, pedidoId, mesa, clienteNombre, meseroEncargado, plato, ingredientesExcluidos, estado
+└── dto/
+    └── DespachoItemResponse.java → itemId, pedidoId, mesa, clienteNombre, meseroEncargado, plato, ingredientesExcluidos, estado
 ```
 
 ### Endpoints implementados
 
-| Método | Endpoint | Acceso |
-|--------|----------|--------|
-| `GET`  | `/despacho/platos` | MESERO, COCINERO |
-| `PATCH`| `/despacho/items/{itemId}/estado` | MESERO |
+| Método | Endpoint | Acceso | Descripción |
+|--------|----------|--------|-------------|
+| `GET`  | `/despacho/platos` | MESERO, COCINERO | Lista todos los ítems con estado LISTO listos para entregar, incluyendo el mesero encargado de cada mesa |
+| `PATCH`| `/despacho/items/{itemId}/estado` | MESERO | Marca un ítem como ENTREGADO. Solo válido desde estado LISTO |
 
 ### Notas de implementación
 
-- `GET /despacho/platos` filtra `ItemPedido` donde `estado = LISTO`
-- El campo `meseroEncargado` se resuelve desde `Mesa → Usuario (MESERO)` — viene del join, no del JWT
-- `PATCH /despacho/items/{itemId}/estado` solo acepta `{ "estado": "ENTREGADO" }` y solo desde `LISTO`
-- Un `COCINERO` puede ver la pantalla pero no puede ejecutar el PATCH
+- `GET /despacho/platos` filtra solo ítems con `estado = LISTO`
+- `meseroEncargado` se resuelve desde `Mesa → Usuario`, no desde el JWT
+- `PATCH` solo acepta `ENTREGADO` y solo desde `LISTO` → si no, `400`
 
 ---
 
@@ -333,9 +370,9 @@ despacho/
 
 | Paso | Qué se construye | Endpoints habilitados |
 |------|------------------|-----------------------|
-| 1 | BD en Render + perfiles + seed data | — |
-| 2 | Auth + JWT + Security + Usuario + Mesa | `POST /auth/cliente`, `POST /auth/login` |
-| 3 | Ingrediente + Plato + PlatoIngrediente | `GET /platos`, `GET /platos/{id}`, `GET /platos/categoria/{cat}` |
+| 1 | BD en Render + perfiles + variables de entorno | — |
+| 2 | Auth + JWT + Security + Usuario + Mesa | `POST /auth/cliente/{mesaId}`, `POST /auth/login` |
+| 3 | Ingrediente + Caracteristica + Plato + PlatoIngrediente | `GET /platos`, `GET /platos/{id}`, `GET /platos/categoria/{cat}` |
 | 4 | Pedido + ItemPedido + EstadoItem | `POST /pedidos`, `GET /pedidos/mesa/{mesaId}` |
 | 5 | Cocina | `GET /cocina/platos`, `PATCH /cocina/items/{itemId}/estado` |
 | 6 | Despacho | `GET /despacho/platos`, `PATCH /despacho/items/{itemId}/estado` |
