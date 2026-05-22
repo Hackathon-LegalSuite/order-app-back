@@ -16,7 +16,9 @@ Base URL: `https://<tu-app>.onrender.com/api`
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| `POST` | `/auth/cliente` | Inicio de sesión con nombre y código de mesa. Retorna JWT de 6h |
+| `POST` | `/auth/cliente/{mesaId}` | Login por QR. Valida que el código ingresado corresponda a la mesa del path. Retorna JWT de 6h |
+
+> El `mesaId` viene embebido en la URL del QR (ej: `restaurante.com/mesa=1`). El cliente ingresa el código visible en la mesa (ej: `MESA-05`). El backend valida que ambos correspondan a la misma mesa.
 
 **Body:**
 ```json
@@ -30,11 +32,18 @@ Base URL: `https://<tu-app>.onrender.com/api`
 ```json
 {
   "token": "eyJhbGci...",
+  "rol": "CLIENTE",
+  "nombre": "Juan",
   "mesaId": 5,
-  "clienteNombre": "Juan",
   "expiresIn": "6h"
 }
 ```
+
+**Errores posibles:**
+| Código | Motivo |
+|--------|--------|
+| `404` | La mesa con ese ID no existe |
+| `400` | El código ingresado no corresponde a esa mesa |
 
 ---
 
