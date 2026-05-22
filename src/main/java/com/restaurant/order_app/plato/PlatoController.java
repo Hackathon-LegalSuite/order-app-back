@@ -20,4 +20,16 @@ public class PlatoController {
     public ResponseEntity<List<PlatoResponse>> listarTodos() {
         return ResponseEntity.ok(platoService.listarTodos());
     }
+
+    /** GET /platos/{id} — retorna el detalle de un plato por su ID. */
+    @GetMapping("/{id}")
+    public ResponseEntity<PlatoResponse> buscarPorId(@PathVariable Long id) {
+        return ResponseEntity.ok(platoService.buscarPorId(id));
+    }
+
+    /** GET /platos/categoria/{categoria} — filtra platos por categoría: ENTRADA, BEBIDA, PLATO_FUERTE, POSTRE. */
+    @GetMapping("/categoria/{categoria}")
+    public ResponseEntity<List<PlatoResponse>> listarPorCategoria(@PathVariable String categoria) {
+        return ResponseEntity.ok(platoService.listarPorCategoria(categoria));
+    }
 }
