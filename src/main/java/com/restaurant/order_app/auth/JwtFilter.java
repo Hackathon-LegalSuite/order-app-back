@@ -39,6 +39,9 @@ public class JwtFilter extends OncePerRequestFilter {
         }
 
         String token = authHeader.substring(7);
+
+        // Intentar parsear el token. Si falla, se marca el error en el request
+        // para que AuthEntryPoint lo lea y devuelva el mensaje correcto al cliente.
         Claims claims;
         try {
             claims = jwtUtil.extractAllClaims(token);
