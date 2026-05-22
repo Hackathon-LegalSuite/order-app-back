@@ -1,0 +1,23 @@
+package com.restaurant.order_app.plato;
+
+import com.restaurant.order_app.plato.dto.PlatoResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+/** Expone los endpoints del menú para consulta por parte del cliente. */
+@RestController
+@RequestMapping("/platos")
+@RequiredArgsConstructor
+public class PlatoController {
+
+    private final PlatoService platoService;
+
+    /** GET /platos — retorna todos los platos del menú con sus ingredientes. */
+    @GetMapping
+    public ResponseEntity<List<PlatoResponse>> listarTodos() {
+        return ResponseEntity.ok(platoService.listarTodos());
+    }
+}
