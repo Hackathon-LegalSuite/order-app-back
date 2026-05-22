@@ -38,6 +38,7 @@ public class PlatoService {
                 .precio(plato.getPrecio())
                 .categoria(plato.getCategoria().name())
                 .preparada(plato.getPreparada())
+                .imagenUrl(plato.getImagenUrl())
                 .ingredientes(ingredientes)
                 .build();
     }
