@@ -3,10 +3,6 @@ spring:
     name: order-app-back
 
   datasource:
-    # url: ${DB_URL}
-    # username: ${DB_USER}
-    # password: ${DB_PASSWORD}
-
     url: jdbc:h2:mem:testdb
     driver-class-name: org.h2.Driver
     username: sa
@@ -15,18 +11,15 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-
     show-sql: true
+
+  h2:
+    console:
+      enabled: true
+
+  sql:
+    init:
+      mode: never
 
 server:
   port: ${PORT:8080}
-
-# management:
-#   endpoints:
-#     web:
-#       exposure:
-#         include: health,info
-
-#   endpoint:
-#     health:
-#       show-details: always
