@@ -23,6 +23,19 @@ public class PlatoService {
         return toResponse(plato);
     }
 
+    /** Retorna los platos filtrados por categoría. Lanza 400 si la categoría no existe. */
+    public List<PlatoResponse> listarPorCategoria(String categoria) {
+        Categoria cat;
+        try {
+            cat = Categoria.valueOf(categoria.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Categoría inválida: " + categoria);
+        }
+        return platoRepository.findByCategoria(cat).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     /** Retorna todos los platos del menú mapeados a su DTO de respuesta. */
     public List<PlatoResponse> listarTodos() {
         return platoRepository.findAll().stream()
