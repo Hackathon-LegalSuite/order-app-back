@@ -1,6 +1,7 @@
 package com.restaurant.order_app.auth;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,12 +39,18 @@ public class JwtFilter extends OncePerRequestFilter {
         }
 
         String token = authHeader.substring(7);
-        if (!jwtUtil.isTokenValid(token)) {
+        Claims claims;
+        try {
+            claims = jwtUtil.extractAllClaims(token);
+        } catch (ExpiredJwtException e) {
+            request.setAttribute("jwt_error", "El token ha expirado");
+            chain.doFilter(request, response);
+            return;
+        } catch (Exception e) {
+            request.setAttribute("jwt_error", "Token inválido");
             chain.doFilter(request, response);
             return;
         }
-
-        Claims claims = jwtUtil.extractAllClaims(token);
         String subject = claims.getSubject();
         String rol = (String) claims.get("rol");
 
