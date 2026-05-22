@@ -10,11 +10,19 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
+/**
+ * Punto de entrada para requests rechazados por falta o invalidez del JWT.
+ * Devuelve un 401 con el mismo formato JSON del resto de la API.
+ */
 @Component
 public class AuthEntryPoint implements AuthenticationEntryPoint {
 
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
+    /**
+     * Se invoca automáticamente cuando Spring Security bloquea un request no autenticado.
+     * Lee el atributo jwt_error del request (cargado por JwtFilter) para dar un mensaje específico.
+     */
     @Override
     public void commence(HttpServletRequest request,
                          HttpServletResponse response,

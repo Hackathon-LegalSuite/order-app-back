@@ -22,6 +22,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtFilter jwtFilter;
+
+    /** Maneja los 401 con formato JSON consistente con el resto de la API. */
     private final AuthEntryPoint authEntryPoint;
 
     /** Define las reglas de acceso, deshabilita CSRF y registra el JwtFilter en la cadena. */
