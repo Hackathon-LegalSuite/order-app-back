@@ -35,6 +35,9 @@ public class Plato {
     /** Solo aplica para BEBIDA: true = elaborada en cocina, false = embotellada. */
     private Boolean preparada;
 
+    /** URL de la imagen del plato para mostrar en el menú. */
+    private String imagenUrl;
+
     @OneToMany(mappedBy = "plato", fetch = FetchType.EAGER)
     private List<PlatoIngrediente> ingredientes;
 }
