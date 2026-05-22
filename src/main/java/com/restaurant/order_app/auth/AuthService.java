@@ -25,10 +25,17 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
 
-    /** Valida que el código de mesa exista y genera un JWT con mesaId y rol CLIENTE. */
-    public AuthResponse loginCliente(ClienteAuthRequest request) {
-        Mesa mesa = mesaRepository.findByCodigoQr(request.getCodigoMesa())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Mesa no encontrada"));
+    /**
+     * Valida que la mesa del path exista y que el código ingresado por el cliente corresponda a esa mesa.
+     * Evita que un cliente use el QR de una mesa pero ingrese el código de otra.
+     */
+    public AuthResponse loginCliente(Long mesaId, ClienteAuthRequest request) {
+        Mesa mesa = mesaRepository.findById(mesaId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Mesa no encontrada"));
+
+        if (!mesa.getCodigoQr().equalsIgnoreCase(request.getCodigoMesa())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El código ingresado no corresponde a esta mesa");
+        }
 
         String token = jwtUtil.generateToken(
                 request.getNombre(),

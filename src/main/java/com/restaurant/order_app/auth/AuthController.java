@@ -16,10 +16,11 @@ public class AuthController {
 
     private final AuthService authService;
 
-    /** POST /auth/cliente — login por QR, retorna JWT de 6h con mesaId. */
-    @PostMapping("/cliente")
-    public ResponseEntity<AuthResponse> loginCliente(@Valid @RequestBody ClienteAuthRequest request) {
-        return ResponseEntity.ok(authService.loginCliente(request));
+    /** POST /auth/cliente/{mesaId} — login por QR, valida que el código ingresado corresponda a la mesa del path. */
+    @PostMapping("/cliente/{mesaId}")
+    public ResponseEntity<AuthResponse> loginCliente(@PathVariable Long mesaId,
+                                                     @Valid @RequestBody ClienteAuthRequest request) {
+        return ResponseEntity.ok(authService.loginCliente(mesaId, request));
     }
 
     /** POST /auth/login — login con credenciales, retorna JWT con rol del staff. */
