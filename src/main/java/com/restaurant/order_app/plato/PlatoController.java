@@ -20,4 +20,10 @@ public class PlatoController {
     public ResponseEntity<List<PlatoResponse>> listarTodos() {
         return ResponseEntity.ok(platoService.listarTodos());
     }
+
+    /** GET /platos/{id} — retorna el detalle de un plato por su ID. */
+    @GetMapping("/{id}")
+    public ResponseEntity<PlatoResponse> buscarPorId(@PathVariable Long id) {
+        return ResponseEntity.ok(platoService.buscarPorId(id));
+    }
 }
