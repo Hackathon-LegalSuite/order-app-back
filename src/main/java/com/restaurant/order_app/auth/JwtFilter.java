@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -62,7 +61,8 @@ public class JwtFilter extends OncePerRequestFilter {
                 null,
                 List.of(new SimpleGrantedAuthority("ROLE_" + rol))
         );
-        auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        // Guardamos los claims como details para que los servicios puedan leerlos (ej: mesaId del cliente).
+        auth.setDetails(claims);
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         chain.doFilter(request, response);

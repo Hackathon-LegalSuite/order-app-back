@@ -39,7 +39,7 @@ public class AuthService {
 
         String token = jwtUtil.generateToken(
                 request.getNombre(),
-                Map.of("mesaId", mesa.getId(), "rol", "CLIENTE"),
+                Map.of("mesaId", mesa.getId(), "rol", "CLIENTE", "clienteId", java.util.UUID.randomUUID().toString()),
                 6
         );
 
