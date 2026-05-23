@@ -4,6 +4,7 @@ import com.restaurant.order_app.item.EstadoItem;
 import com.restaurant.order_app.item.ItemPedido;
 import com.restaurant.order_app.mesa.Mesa;
 import com.restaurant.order_app.mesa.MesaRepository;
+import com.restaurant.order_app.pedido.dto.ConsultaItemResponse;
 import com.restaurant.order_app.pedido.dto.CrearPedidoRequest;
 import com.restaurant.order_app.pedido.dto.ItemRequest;
 import com.restaurant.order_app.pedido.dto.ItemResponse;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -60,6 +62,46 @@ public class PedidoService {
 
         items.forEach(item -> item.setPedido(pedido));
         return toResponse(pedidoRepository.save(pedido));
+    }
+
+    /**
+     * Retorna ítems filtrados según el rol del token:
+     * - CLIENTE: todos sus ítems (por sessionId), sin mesa ni mesero, sin filtro de estado.
+     * - COCINERO: todos los ítems en EN_ESPERA o EN_PROGRESO de todas las mesas.
+     * - MESERO: solo ítems en LISTO de las mesas que tiene asignadas.
+     */
+    public List<ConsultaItemResponse> listar() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Claims claims = (Claims) auth.getDetails();
+        String rol = (String) claims.get("rol");
+
+        Sort porFecha = Sort.by(Sort.Direction.DESC, "creadoEn");
+
+        if ("CLIENTE".equals(rol)) {
+            String sessionId = (String) claims.get("clienteId");
+            return pedidoRepository.findByClienteSessionId(sessionId, porFecha).stream()
+                    .flatMap(p -> p.getItems().stream())
+                    .map(item -> toConsultaResponse(item, false))
+                    .toList();
+        }
+
+        if ("COCINERO".equals(rol)) {
+            return pedidoRepository.findAll(porFecha).stream()
+                    .flatMap(p -> p.getItems().stream())
+                    .filter(item -> item.getEstado() == EstadoItem.EN_ESPERA
+                                 || item.getEstado() == EstadoItem.EN_PROGRESO)
+                    .map(item -> toConsultaResponse(item, true))
+                    .toList();
+        }
+
+        // MESERO: solo ítems LISTO de sus mesas asignadas
+        String username = auth.getName();
+        return pedidoRepository.findAll(porFecha).stream()
+                .filter(p -> p.getMesa().getMesero().getUsername().equals(username))
+                .flatMap(p -> p.getItems().stream())
+                .filter(item -> item.getEstado() == EstadoItem.LISTO)
+                .map(item -> toConsultaResponse(item, true))
+                .toList();
     }
 
     /** Construye un ItemPedido validando que los ingredientes excluidos sean opcionales en ese plato. */
@@ -123,6 +165,34 @@ public class PedidoService {
                 .ingredientesExcluidos(excluidos)
                 .estado(item.getEstado())
                 .build();
+    }
+
+    private ConsultaItemResponse toConsultaResponse(ItemPedido item, boolean incluirMesaYMesero) {
+        Map<Long, String> nombrePorId = item.getPlato().getIngredientes().stream()
+                .collect(Collectors.toMap(
+                        pi -> pi.getIngrediente().getId(),
+                        pi -> pi.getIngrediente().getNombre()
+                ));
+
+        List<String> excluidos = item.getIngredientesExcluidos().stream()
+                .map(id -> nombrePorId.getOrDefault(id, "Ingrediente " + id))
+                .toList();
+
+        ConsultaItemResponse.ConsultaItemResponseBuilder builder = ConsultaItemResponse.builder()
+                .itemId(item.getId())
+                .platoId(item.getPlato().getId())
+                .platoNombre(item.getPlato().getNombre())
+                .precio(item.getPlato().getPrecio())
+                .imagenUrl(item.getPlato().getImagenUrl())
+                .ingredientesExcluidos(excluidos)
+                .estado(item.getEstado());
+
+        if (incluirMesaYMesero) {
+            builder.mesa(item.getPedido().getMesa().getNumero())
+                   .mesero(item.getPedido().getMesa().getMesero().getNombre());
+        }
+
+        return builder.build();
     }
 
     /** Extrae el mesaId del JWT. Lanza 403 si el token no pertenece a un cliente (no tiene mesaId). */
