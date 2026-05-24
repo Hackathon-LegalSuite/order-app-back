@@ -1,5 +1,6 @@
 package com.restaurant.order_app.pedido;
 
+import com.restaurant.order_app.exception.MensajeResponse;
 import com.restaurant.order_app.pedido.dto.ConsultaItemResponse;
 import com.restaurant.order_app.pedido.dto.CrearPedidoRequest;
 import com.restaurant.order_app.pedido.dto.PedidoResponse;
@@ -29,6 +30,12 @@ public class PedidoController {
     @GetMapping
     public ResponseEntity<List<ConsultaItemResponse>> listar() {
         return ResponseEntity.ok(pedidoService.listar());
+    }
+
+    /** DELETE /pedido/{pedidoId}/item/{itemId} — elimina un ítem del pedido. Si era el último, elimina el pedido. */
+    @DeleteMapping("/{pedidoId}/item/{itemId}")
+    public ResponseEntity<MensajeResponse> eliminarItem(@PathVariable Long pedidoId, @PathVariable Long itemId) {
+        return ResponseEntity.ok(new MensajeResponse(pedidoService.eliminarItem(pedidoId, itemId)));
     }
 
 }
