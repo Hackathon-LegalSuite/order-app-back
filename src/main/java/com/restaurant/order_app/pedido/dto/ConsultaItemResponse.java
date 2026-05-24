@@ -13,6 +13,7 @@ import java.util.List;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ConsultaItemResponse {
+    private Long pedidoId;
     private Long itemId;
     private Long platoId;
     private String platoNombre;

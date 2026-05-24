@@ -277,92 +277,85 @@ ALTER TABLE platos ALTER COLUMN id RESTART WITH 100;
 
 ## Paso 4 — Pedidos
 
+### Archivos creados
+
+```
+item/
+├── ItemPedido.java       → @Entity — plato + ingredientes excluidos + estado
+├── ItemRepository.java
+└── EstadoItem.java       → @Enum: EN_ESPERA, EN_PROGRESO, LISTO, ENTREGADO
+
+pedido/
+├── Pedido.java               → @Entity — mesa, clienteNombre, clienteSessionId, items, creadoEn
+├── PedidoRepository.java     → findByClienteSessionId(String, Sort), findByMesaIdOrderByCreadoEnDesc(Long)
+├── PedidoService.java
+├── PedidoController.java
+└── dto/
+    ├── CrearPedidoRequest.java    → items[] (mesa y nombre se extraen del JWT)
+    ├── ItemRequest.java           → platoId, ingredientesExcluidos[]
+    ├── ItemResponse.java          → id, platoId, platoNombre, ingredientesExcluidos, estado
+    ├── PedidoResponse.java        → id, mesaId, clienteNombre, clienteSessionId, creadoEn, items
+    └── ConsultaItemResponse.java  → pedidoId, itemId, platoId, platoNombre, precio, imagenUrl,
+                                     ingredientesExcluidos, estado, mesa?, mesero?
+```
+
+### Endpoints implementados
+
+| Método | Endpoint | Acceso | Descripción |
+|--------|----------|--------|-------------|
+| `POST` | `/pedido` | CLIENTE | Crea un nuevo pedido. Mesa y nombre del cliente se extraen del JWT |
+| `GET`  | `/pedido` | TODOS | Retorna ítems filtrados según el rol del token (ver lógica abajo) |
+| `DELETE` | `/pedido/{pedidoId}/item/{itemId}` | CLIENTE | Elimina un ítem del pedido. Si era el último, elimina el pedido |
+
+### Lógica del GET /pedido por rol
+
+| Rol | Ítems que ve | Filtro de estado | Mesa y mesero |
+|-----|-------------|-----------------|---------------|
+| CLIENTE | Solo los de su sesión (`clienteSessionId`) | Todos | No |
+| COCINERO | Todos los pedidos de todas las mesas | `EN_ESPERA` y `EN_PROGRESO` | Sí |
+| MESERO | Solo pedidos de sus mesas asignadas | `LISTO` | Sí |
+
+> Los resultados se ordenan por `pedidos.creado_en DESC` en todos los casos.
+
+### Diseño de `clienteSessionId`
+
+Al hacer login con `/auth/cliente/{mesaId}`, el JWT incluye un `clienteId` (UUID generado en ese momento). Este UUID se guarda en cada pedido como `clienteSessionId`, permitiendo identificar de forma única qué cliente creó qué pedido dentro de una misma mesa.
+
+### Validaciones
+
+- `ingredientesExcluidos` solo puede contener IDs con `obligatorio: false` en `PlatoIngrediente` → si no, `400`
+- `DELETE`: el `clienteSessionId` del JWT debe coincidir con el del pedido → si no, `403`
+- `GET`: si el token es de staff pero sin `mesaId` y se intenta acceder a lógica de cliente → `403`
+
+---
+
+## Paso 5 — Transición de estados
+
+El GET unificado en `/pedido` ya cubre la vista de cocina y despacho según el rol. Lo que resta es el endpoint para avanzar el estado de un ítem.
+
 ### Archivos a crear
 
 ```
 item/
-├── ItemPedido.java           → @Entity
-├── ItemRepository.java
-├── ItemService.java          → lógica de validación de transición de estados
-└── EstadoItem.java           → @Enum: EN_ESPERA, EN_PROGRESO, LISTO, ENTREGADO
-
-pedido/
-├── Pedido.java               → @Entity
-├── PedidoRepository.java     → findByMesaId(Long mesaId)
-├── PedidoService.java
-├── PedidoController.java
-└── dto/
-    ├── CrearPedidoRequest.java   → mesaId, clienteNombre, items[]
-    ├── ItemRequest.java          → platoId, ingredientesExcluidos[]
-    └── PedidoResponse.java
+└── ItemService.java   → lógica de validación de transición según rol
 ```
 
-### Endpoints implementados
+### Endpoint a implementar
 
 | Método | Endpoint | Acceso | Descripción |
 |--------|----------|--------|-------------|
-| `POST` | `/pedidos` | CLIENTE | Crea un nuevo pedido desde la mesa. Valida ingredientes excluidos y mesaId del JWT |
-| `GET`  | `/pedidos/mesa/{mesaId}` | CLIENTE | Retorna todos los pedidos activos de la mesa con el estado actual de cada ítem |
-
-### Validaciones obligatorias
-
-- `ingredientesExcluidos` solo puede contener IDs con `obligatorio: false` en `PlatoIngrediente` → si no, `400`
-- El `mesaId` del JWT debe coincidir con el `mesaId` del body
-
----
-
-## Paso 5 — Cocina
-
-### Archivos a crear
-
-```
-cocina/
-├── CocinaController.java     → /cocina/platos, /cocina/items/{itemId}/estado
-├── CocinaService.java
-└── dto/
-    └── CocinaItemResponse.java   → itemId, pedidoId, mesa, clienteNombre, plato, ingredientesExcluidos, estado
-```
-
-### Endpoints implementados
-
-| Método | Endpoint | Acceso | Descripción |
-|--------|----------|--------|-------------|
-| `GET`  | `/cocina/platos` | COCINERO | Lista todos los ítems en preparación (EN_ESPERA o EN_PROGRESO) de todos los pedidos activos |
-| `PATCH`| `/cocina/items/{itemId}/estado` | COCINERO | Avanza el estado de un ítem. Solo permite EN_ESPERA → EN_PROGRESO → LISTO |
+| `PATCH` | `/pedido/item/{itemId}/estado` | COCINERO, MESERO | Avanza el estado de un ítem según las transiciones permitidas por rol |
 
 ### Lógica de transición
 
 ```
-EN_ESPERA → EN_PROGRESO → LISTO   (solo COCINERO)
-LISTO → no modificable por COCINERO
+COCINERO:  EN_ESPERA → EN_PROGRESO → LISTO
+MESERO:    LISTO → ENTREGADO
 ```
 
----
-
-## Paso 6 — Despacho
-
-### Archivos a crear
-
-```
-despacho/
-├── DespachoController.java   → /despacho/platos, /despacho/items/{itemId}/estado
-├── DespachoService.java
-└── dto/
-    └── DespachoItemResponse.java → itemId, pedidoId, mesa, clienteNombre, meseroEncargado, plato, ingredientesExcluidos, estado
-```
-
-### Endpoints implementados
-
-| Método | Endpoint | Acceso | Descripción |
-|--------|----------|--------|-------------|
-| `GET`  | `/despacho/platos` | MESERO, COCINERO | Lista todos los ítems con estado LISTO listos para entregar, incluyendo el mesero encargado de cada mesa |
-| `PATCH`| `/despacho/items/{itemId}/estado` | MESERO | Marca un ítem como ENTREGADO. Solo válido desde estado LISTO |
-
-### Notas de implementación
-
-- `GET /despacho/platos` filtra solo ítems con `estado = LISTO`
-- `meseroEncargado` se resuelve desde `Mesa → Usuario`, no desde el JWT
-- `PATCH` solo acepta `ENTREGADO` y solo desde `LISTO` → si no, `400`
+- COCINERO no puede marcar `ENTREGADO`
+- MESERO no puede retroceder ni saltar estados
+- Cualquier transición inválida → `400`
 
 ---
 
@@ -373,6 +366,5 @@ despacho/
 | 1 | BD en Render + perfiles + variables de entorno | — |
 | 2 | Auth + JWT + Security + Usuario + Mesa | `POST /auth/cliente/{mesaId}`, `POST /auth/login` |
 | 3 | Ingrediente + Caracteristica + Plato + PlatoIngrediente | `GET /platos`, `GET /platos/{id}`, `GET /platos/categoria/{cat}` |
-| 4 | Pedido + ItemPedido + EstadoItem | `POST /pedidos`, `GET /pedidos/mesa/{mesaId}` |
-| 5 | Cocina | `GET /cocina/platos`, `PATCH /cocina/items/{itemId}/estado` |
-| 6 | Despacho | `GET /despacho/platos`, `PATCH /despacho/items/{itemId}/estado` |
+| 4 | Pedido + ItemPedido + EstadoItem | `POST /pedido`, `GET /pedido`, `DELETE /pedido/{pedidoId}/item/{itemId}` |
+| 5 | Transición de estados | `PATCH /pedido/item/{itemId}/estado` |
