@@ -32,6 +32,12 @@ public class PedidoController {
         return ResponseEntity.ok(pedidoService.listar());
     }
 
+    /** PATCH /pedido/item/{itemId}/estado — avanza el estado del ítem al siguiente: EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO. */
+    @PatchMapping("/item/{itemId}/estado")
+    public ResponseEntity<MensajeResponse> avanzarEstado(@PathVariable Long itemId) {
+        return ResponseEntity.ok(new MensajeResponse(pedidoService.avanzarEstado(itemId)));
+    }
+
     /** DELETE /pedido/{pedidoId}/item/{itemId} — elimina un ítem del pedido. Si era el último, elimina el pedido. */
     @DeleteMapping("/{pedidoId}/item/{itemId}")
     public ResponseEntity<MensajeResponse> eliminarItem(@PathVariable Long pedidoId, @PathVariable Long itemId) {
