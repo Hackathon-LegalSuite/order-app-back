@@ -2,6 +2,7 @@ package com.restaurant.order_app.pedido;
 
 import com.restaurant.order_app.item.EstadoItem;
 import com.restaurant.order_app.item.ItemPedido;
+import com.restaurant.order_app.item.ItemRepository;
 import com.restaurant.order_app.mesa.Mesa;
 import com.restaurant.order_app.mesa.MesaRepository;
 import com.restaurant.order_app.pedido.dto.ConsultaItemResponse;
@@ -31,7 +32,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PedidoService {
 
+    private static final List<EstadoItem> SECUENCIA_ESTADOS = List.of(
+            EstadoItem.EN_ESPERA, EstadoItem.EN_PROGRESO, EstadoItem.LISTO, EstadoItem.ENTREGADO
+    );
+
     private final PedidoRepository pedidoRepository;
+    private final ItemRepository itemRepository;
     private final MesaRepository mesaRepository;
     private final PlatoRepository platoRepository;
 
@@ -143,6 +149,25 @@ public class PedidoService {
 
         pedidoRepository.save(pedido);
         return "Ítem eliminado correctamente";
+    }
+
+    /** Avanza el estado del ítem al siguiente en la secuencia. Lanza 400 si ya está en ENTREGADO. */
+    public String avanzarEstado(Long itemId) {
+        ItemPedido item = itemRepository.findById(itemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ítem no encontrado"));
+
+        int indiceActual = SECUENCIA_ESTADOS.indexOf(item.getEstado());
+
+        if (indiceActual == SECUENCIA_ESTADOS.size() - 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "El ítem ya está en el estado final: ENTREGADO");
+        }
+
+        EstadoItem nuevoEstado = SECUENCIA_ESTADOS.get(indiceActual + 1);
+        item.setEstado(nuevoEstado);
+        itemRepository.save(item);
+
+        return "Estado actualizado a " + nuevoEstado;
     }
 
     /** Construye un ItemPedido validando que los ingredientes excluidos sean opcionales en ese plato. */
