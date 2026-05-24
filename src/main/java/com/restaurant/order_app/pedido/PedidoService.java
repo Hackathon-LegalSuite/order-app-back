@@ -12,6 +12,7 @@ import com.restaurant.order_app.pedido.dto.ItemResponse;
 import com.restaurant.order_app.pedido.dto.PedidoResponse;
 import com.restaurant.order_app.plato.Plato;
 import com.restaurant.order_app.plato.PlatoRepository;
+import com.restaurant.order_app.plato.dto.IngredienteEnPlatoResponse;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -244,6 +245,14 @@ public class PedidoService {
                 .map(id -> nombrePorId.getOrDefault(id, "Ingrediente " + id))
                 .toList();
 
+        List<IngredienteEnPlatoResponse> ingredientes = item.getPlato().getIngredientes().stream()
+                .map(pi -> IngredienteEnPlatoResponse.builder()
+                        .id(pi.getIngrediente().getId())
+                        .nombre(pi.getIngrediente().getNombre())
+                        .obligatorio(pi.getObligatorio())
+                        .build())
+                .toList();
+
         ConsultaItemResponse.ConsultaItemResponseBuilder builder = ConsultaItemResponse.builder()
                 .pedidoId(item.getPedido().getId())
                 .itemId(item.getId())
@@ -251,6 +260,7 @@ public class PedidoService {
                 .platoNombre(item.getPlato().getNombre())
                 .precio(item.getPlato().getPrecio())
                 .imagenUrl(item.getPlato().getImagenUrl())
+                .ingredientes(ingredientes)
                 .ingredientesExcluidos(excluidos)
                 .estado(item.getEstado());
 
