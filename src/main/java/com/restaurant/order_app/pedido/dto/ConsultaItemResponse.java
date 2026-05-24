@@ -2,6 +2,7 @@ package com.restaurant.order_app.pedido.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.restaurant.order_app.item.EstadoItem;
+import com.restaurant.order_app.plato.dto.IngredienteEnPlatoResponse;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -19,6 +20,7 @@ public class ConsultaItemResponse {
     private String platoNombre;
     private BigDecimal precio;
     private String imagenUrl;
+    private List<IngredienteEnPlatoResponse> ingredientes;
     private List<String> ingredientesExcluidos;
     private EstadoItem estado;
     private Integer mesa;
