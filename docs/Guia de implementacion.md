@@ -355,6 +355,78 @@ EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO
 
 ---
 
+## Paso 6 — Búsqueda inteligente con IA (Gemini)
+
+### Dependencias a agregar en `pom.xml`
+
+```xml
+<dependency>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-databind</artifactId>
+</dependency>
+```
+
+> `jackson-databind` debe declararse explícitamente porque `spring-boot-starter-webmvc` no lo expone a compile scope, y `jjwt-jackson` tiene scope `runtime`.
+
+### Variables de entorno
+
+| Variable | Descripción |
+|----------|-------------|
+| `GEMINI_API_KEY` | API Key de Google AI Studio — obtener en [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+
+Agregar a `.env` local y en las variables de entorno de Render.
+
+### Configuración en `application.yml`
+
+```yaml
+gemini:
+  api-url: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent
+  api-key: ${GEMINI_API_KEY}
+```
+
+### Archivos a crear
+
+```
+config/
+└── AppConfig.java              → @Bean de RestTemplate
+
+busqueda/
+├── GeminiClient.java           → HTTP client para la API de Gemini
+├── BusquedaService.java        → orquesta prompt, llamada a Gemini, filtrado y resolución de IDs
+├── BusquedaController.java     → POST /menu/buscar
+└── dto/
+    ├── BusquedaRequest.java        → prompt (String)
+    ├── GeminiParseResult.java      → JSON que devuelve Gemini: mensaje, busqueda, caracteristicas, categoria, precioMaximo, ingredientesExcluir
+    ├── BusquedaResponse.java       → mensaje, ingredientesExcluir[], platos[]
+    └── IngredienteExcluirInfo.java → id, nombre
+```
+
+### Endpoint implementado
+
+| Método | Endpoint | Acceso | Descripción |
+|--------|----------|--------|-------------|
+| `POST` | `/menu/buscar` | CLIENTE | Interpreta el prompt en lenguaje natural y retorna platos coincidentes |
+
+### Arquitectura de la búsqueda
+
+El modelo actúa como **parser de intención**, no como fuente de verdad:
+
+1. `BusquedaService` carga del contexto del menú desde la BD (categorías, características e ingredientes disponibles) e inyecta esa lista en el prompt.
+2. Gemini extrae parámetros estructurados (`categoria`, `caracteristicas`, `busqueda`, `precioMaximo`, `ingredientesExcluir`) usando solo valores que existen en el menú real.
+3. El filtrado ocurre en memoria sobre los platos de la BD — Gemini no filtra nada.
+4. Los nombres de ingredientes a excluir se resuelven a IDs de BD para que el front pueda usarlos directamente en `POST /pedido`.
+
+Cada solicitud es independiente — no hay historial de conversación ni sesión en el servidor.
+
+### Notas de implementación
+
+- `@Transactional(readOnly=true)` en `BusquedaService` es necesario para acceder a `Ingrediente.caracteristicas` (relación lazy).
+- `responseMimeType: application/json` en la request a Gemini fuerza el modelo a responder exclusivamente con JSON válido — elimina el riesgo de texto adicional que rompa el parseo.
+- Si Gemini no responde o el JSON no parsea, el servicio lanza `503 SERVICE_UNAVAILABLE` con un mensaje al usuario.
+- El modelo usado es `gemini-1.5-flash` (capa gratuita de Google AI Studio, sin tarjeta de crédito requerida).
+
+---
+
 ## Resumen de orden de implementación
 
 | Paso | Qué se construye | Endpoints habilitados |
@@ -364,3 +436,4 @@ EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO
 | 3 | Ingrediente + Caracteristica + Plato + PlatoIngrediente | `GET /platos`, `GET /platos/{id}`, `GET /platos/categoria/{cat}` |
 | 4 | Pedido + ItemPedido + EstadoItem | `POST /pedido`, `GET /pedido`, `PATCH /pedido/item/{itemId}/estado`, `DELETE /pedido/{pedidoId}/item/{itemId}` |
 | 5 | Transición de estados | Incluido en el Paso 4 — `PATCH /pedido/item/{itemId}/estado` |
+| 6 | Búsqueda inteligente con Gemini | `POST /menu/buscar` |
