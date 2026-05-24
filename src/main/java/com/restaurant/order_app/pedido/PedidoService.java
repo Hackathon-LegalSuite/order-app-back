@@ -2,7 +2,6 @@ package com.restaurant.order_app.pedido;
 
 import com.restaurant.order_app.item.EstadoItem;
 import com.restaurant.order_app.item.ItemPedido;
-import com.restaurant.order_app.item.ItemRepository;
 import com.restaurant.order_app.mesa.Mesa;
 import com.restaurant.order_app.mesa.MesaRepository;
 import com.restaurant.order_app.pedido.dto.ConsultaItemResponse;
@@ -33,7 +32,6 @@ import java.util.stream.Collectors;
 public class PedidoService {
 
     private final PedidoRepository pedidoRepository;
-    private final ItemRepository itemRepository;
     private final MesaRepository mesaRepository;
     private final PlatoRepository platoRepository;
 
@@ -126,23 +124,24 @@ public class PedidoService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Pedido no encontrado");
         }
 
-        boolean itemExiste = pedido.getItems().stream().anyMatch(i -> i.getId().equals(itemId));
-        if (!itemExiste) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "El ítem no pertenece a al pedido");
+        ItemPedido item = pedido.getItems().stream()
+                .filter(i -> i.getId().equals(itemId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "El ítem no pertenece a este pedido"));
+
+        if (item.getEstado() != EstadoItem.EN_ESPERA) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "No se puede eliminar un ítem que ya está en estado " + item.getEstado());
         }
 
-        itemRepository.deleteById(itemId);
+        pedido.getItems().removeIf(i -> i.getId().equals(itemId));
 
-        boolean sinItems = pedido.getItems().stream()
-                .filter(i -> !i.getId().equals(itemId))
-                .findAny()
-                .isEmpty();
-
-        if (sinItems) {
+        if (pedido.getItems().isEmpty()) {
             pedidoRepository.delete(pedido);
             return "Ítem eliminado. El pedido fue eliminado por no tener más ítems";
         }
 
+        pedidoRepository.save(pedido);
         return "Ítem eliminado correctamente";
     }
 
