@@ -296,7 +296,7 @@ pedido/
     ├── ItemResponse.java          → id, platoId, platoNombre, ingredientesExcluidos, estado
     ├── PedidoResponse.java        → id, mesaId, clienteNombre, clienteSessionId, creadoEn, items
     └── ConsultaItemResponse.java  → pedidoId, itemId, platoId, platoNombre, precio, imagenUrl,
-                                     ingredientesExcluidos, estado, mesa?, mesero?
+                                     ingredientes[], ingredientesExcluidos[], estado, mesa?, mesero?
 ```
 
 ### Endpoints implementados
@@ -305,6 +305,7 @@ pedido/
 |--------|----------|--------|-------------|
 | `POST` | `/pedido` | CLIENTE | Crea un nuevo pedido. Mesa y nombre del cliente se extraen del JWT |
 | `GET`  | `/pedido` | TODOS | Retorna ítems filtrados según el rol del token (ver lógica abajo) |
+| `PATCH` | `/pedido/item/{itemId}/estado` | TODOS | Avanza el estado del ítem al siguiente en la secuencia |
 | `DELETE` | `/pedido/{pedidoId}/item/{itemId}` | CLIENTE | Elimina un ítem del pedido. Si era el último, elimina el pedido |
 
 ### Lógica del GET /pedido por rol
@@ -317,6 +318,8 @@ pedido/
 
 > Los resultados se ordenan por `pedidos.creado_en DESC` en todos los casos.
 
+Cada ítem en la respuesta incluye `ingredientes` (lista completa del plato con `id`, `nombre` y `obligatorio`) e `ingredientesExcluidos` (nombres de los que el cliente pidió quitar). `mesa` y `mesero` solo aparecen para COCINERO y MESERO — `@JsonInclude(NON_NULL)` los omite para CLIENTE.
+
 ### Diseño de `clienteSessionId`
 
 Al hacer login con `/auth/cliente/{mesaId}`, el JWT incluye un `clienteId` (UUID generado en ese momento). Este UUID se guarda en cada pedido como `clienteSessionId`, permitiendo identificar de forma única qué cliente creó qué pedido dentro de una misma mesa.
@@ -324,38 +327,31 @@ Al hacer login con `/auth/cliente/{mesaId}`, el JWT incluye un `clienteId` (UUID
 ### Validaciones
 
 - `ingredientesExcluidos` solo puede contener IDs con `obligatorio: false` en `PlatoIngrediente` → si no, `400`
+- `DELETE`: solo se pueden eliminar ítems en estado `EN_ESPERA` → si está en otro estado, `400`
 - `DELETE`: el `clienteSessionId` del JWT debe coincidir con el del pedido → si no, `403`
-- `GET`: si el token es de staff pero sin `mesaId` y se intenta acceder a lógica de cliente → `403`
+- `PATCH /estado`: la secuencia es `EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO`. No se puede retroceder ni saltar. Si ya está en `ENTREGADO` → `400`
 
 ---
 
-## Paso 5 — Transición de estados
+## Paso 5 — Transición de estados ✅
 
-El GET unificado en `/pedido` ya cubre la vista de cocina y despacho según el rol. Lo que resta es el endpoint para avanzar el estado de un ítem.
+Implementado dentro de `PedidoService` y `PedidoController`. No requirió archivos adicionales.
 
-### Archivos a crear
-
-```
-item/
-└── ItemService.java   → lógica de validación de transición según rol
-```
-
-### Endpoint a implementar
+### Endpoint implementado
 
 | Método | Endpoint | Acceso | Descripción |
 |--------|----------|--------|-------------|
-| `PATCH` | `/pedido/item/{itemId}/estado` | COCINERO, MESERO | Avanza el estado de un ítem según las transiciones permitidas por rol |
+| `PATCH` | `/pedido/item/{itemId}/estado` | TODOS | Avanza el estado del ítem al siguiente en la secuencia. Sin body. |
 
 ### Lógica de transición
 
 ```
-COCINERO:  EN_ESPERA → EN_PROGRESO → LISTO
-MESERO:    LISTO → ENTREGADO
+EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO
 ```
 
-- COCINERO no puede marcar `ENTREGADO`
-- MESERO no puede retroceder ni saltar estados
-- Cualquier transición inválida → `400`
+- No recibe estado en el body — siempre avanza al siguiente
+- Si el ítem ya está en `ENTREGADO` → `400`
+- La secuencia está definida como constante en `PedidoService.SECUENCIA_ESTADOS`
 
 ---
 
@@ -366,5 +362,5 @@ MESERO:    LISTO → ENTREGADO
 | 1 | BD en Render + perfiles + variables de entorno | — |
 | 2 | Auth + JWT + Security + Usuario + Mesa | `POST /auth/cliente/{mesaId}`, `POST /auth/login` |
 | 3 | Ingrediente + Caracteristica + Plato + PlatoIngrediente | `GET /platos`, `GET /platos/{id}`, `GET /platos/categoria/{cat}` |
-| 4 | Pedido + ItemPedido + EstadoItem | `POST /pedido`, `GET /pedido`, `DELETE /pedido/{pedidoId}/item/{itemId}` |
-| 5 | Transición de estados | `PATCH /pedido/item/{itemId}/estado` |
+| 4 | Pedido + ItemPedido + EstadoItem | `POST /pedido`, `GET /pedido`, `PATCH /pedido/item/{itemId}/estado`, `DELETE /pedido/{pedidoId}/item/{itemId}` |
+| 5 | Transición de estados | Incluido en el Paso 4 — `PATCH /pedido/item/{itemId}/estado` |
