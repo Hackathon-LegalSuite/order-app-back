@@ -23,3 +23,8 @@ spring:
 
 server:
   port: ${PORT:8080}
+
+groq:
+  api-url: https://api.groq.com/openai/v1/chat/completions
+  model: llama-3.1-8b-instant
+  api-key: ${GROQ_API_KEY}
