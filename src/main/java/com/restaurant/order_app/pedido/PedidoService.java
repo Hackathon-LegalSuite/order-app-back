@@ -104,6 +104,47 @@ public class PedidoService {
                 .toList();
     }
 
+    /**
+     * Elimina un ítem de un pedido. Si era el último ítem, elimina el pedido también.
+     * Valida que el clienteSessionId del token coincida con el del pedido.
+     */
+    public String eliminarItem(Long pedidoId, Long itemId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        Claims claims = (Claims) auth.getDetails();
+        String sessionId = (String) claims.get("clienteId");
+
+        if (sessionId == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Este endpoint es solo para clientes");
+        }
+
+        Pedido pedido = pedidoRepository.findById(pedidoId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Pedido no encontrado"));
+
+        if (!pedido.getClienteSessionId().equals(sessionId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Pedido no encontrado");
+        }
+
+        ItemPedido item = pedido.getItems().stream()
+                .filter(i -> i.getId().equals(itemId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "El ítem no pertenece a este pedido"));
+
+        if (item.getEstado() != EstadoItem.EN_ESPERA) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "No se puede eliminar un ítem que ya está en estado " + item.getEstado());
+        }
+
+        pedido.getItems().removeIf(i -> i.getId().equals(itemId));
+
+        if (pedido.getItems().isEmpty()) {
+            pedidoRepository.delete(pedido);
+            return "Ítem eliminado. El pedido fue eliminado por no tener más ítems";
+        }
+
+        pedidoRepository.save(pedido);
+        return "Ítem eliminado correctamente";
+    }
+
     /** Construye un ItemPedido validando que los ingredientes excluidos sean opcionales en ese plato. */
     private ItemPedido buildItem(ItemRequest req) {
         Plato plato = platoRepository.findById(req.getPlatoId())
@@ -179,6 +220,7 @@ public class PedidoService {
                 .toList();
 
         ConsultaItemResponse.ConsultaItemResponseBuilder builder = ConsultaItemResponse.builder()
+                .pedidoId(item.getPedido().getId())
                 .itemId(item.getId())
                 .platoId(item.getPlato().getId())
                 .platoNombre(item.getPlato().getNombre())

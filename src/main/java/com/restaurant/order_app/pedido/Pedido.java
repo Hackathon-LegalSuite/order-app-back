@@ -33,7 +33,7 @@ public class Pedido {
     @Column(nullable = false)
     private String clienteSessionId;
 
-    @OneToMany(mappedBy = "pedido", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "pedido", cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
     private List<ItemPedido> items;
 
     @Column(nullable = false)
