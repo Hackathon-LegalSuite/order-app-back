@@ -17,12 +17,7 @@ Backend para una plataforma de gestión de pedidos en restaurantes, desarrollado
 | Lombok          | —       |
 | Maven           | —       |
 
-**Base de datos por entorno:**
-
-| Entorno    | Base de Datos   |
-|------------|-----------------|
-| Desarrollo | H2 (en memoria) |
-| Producción | PostgreSQL      |
+**Base de datos:** PostgreSQL (Render) — tanto en local como en producción.
 
 ---
 
@@ -39,26 +34,11 @@ Backend para una plataforma de gestión de pedidos en restaurantes, desarrollado
 
 ## Cómo correr el proyecto
 
-### Modo desarrollo (H2 en memoria)
-
-No requiere configuración. La BD se crea en memoria al iniciar.
-
-```bash
-git clone <repository-url>
-./mvnw spring-boot:run
-```
-
-La aplicación inicia en `http://localhost:8080`.
-La consola H2 queda disponible en `http://localhost:8080/h2-console`.
-
----
-
-### Modo producción (PostgreSQL)
+### Cómo correr localmente
 
 **1. Crear `.env`** en la raíz (no se sube al repo):
 
 ```
-SPRING_PROFILES_ACTIVE=prod
 DB_URL=jdbc:postgresql://<host>/<dbname>
 DB_USER=<usuario>
 DB_PASSWORD=<contraseña>
@@ -82,15 +62,6 @@ Get-Content .env | ForEach-Object {
 ```powershell
 .\run-local.ps1
 ```
-
----
-
-### Perfiles disponibles
-
-| Perfil | Archivo | Base de datos | Cómo activar |
-|--------|---------|---------------|--------------|
-| `default` (dev) | `application.yml` | H2 en memoria | `./mvnw spring-boot:run` |
-| `prod` | `application-prod.yml` | PostgreSQL | `SPRING_PROFILES_ACTIVE=prod` |
 
 ---
 
