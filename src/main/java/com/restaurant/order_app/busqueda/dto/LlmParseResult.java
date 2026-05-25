@@ -31,4 +31,10 @@ public class LlmParseResult {
 
     /** Ingredientes que el cliente quiere evitar (alergias, preferencias). */
     private List<String> ingredientesExcluir;
+
+    /** Ingredientes que el plato debe tener TODOS (operador AND). Ej: "con pollo y arroz". */
+    private List<String> ingredientesRequeridos;
+
+    /** Ingredientes donde el plato debe tener AL MENOS UNO (operador OR). Ej: "con arepa o pan". */
+    private List<String> ingredientesCualquiera;
 }
