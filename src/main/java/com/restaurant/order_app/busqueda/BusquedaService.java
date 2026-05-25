@@ -53,7 +53,7 @@ public class BusquedaService {
         LlmParseResult parsed = llamarGroq(prompt);
 
         // 3. Filtrar platos con los parámetros extraídos
-        List<Plato> todos = platoRepository.findAll();
+        List<Plato> todos = platoRepository.findAllConCaracteristicas();
         List<Plato> filtrados = filtrar(todos, parsed);
 
         // 4. Resolver IDs de ingredientes a excluir
@@ -67,7 +67,7 @@ public class BusquedaService {
     }
 
     /**
-     * Construye el prompt completo que se envía a Gemini.
+     * Construye el prompt completo que se envía al LLM.
      * Incluye el contexto del menú (características e ingredientes) para que el modelo
      * no invente valores que no existen en la BD.
      */
@@ -82,15 +82,18 @@ public class BusquedaService {
                 - Ingredientes disponibles: %s
 
                 INSTRUCCIONES:
-                1. "busqueda": el plato o ingrediente principal que el cliente QUIERE comer. Ej: si dice "quiero carne" → "Carne de res". Si dice "quiero hamburguesa" → "hamburguesa".
-                2. "caracteristicas": usá únicamente nombres de la lista disponible. Ej: si dice "picante" → ["Picante"].
-                3. "categoria": usá únicamente los valores válidos o null si no se menciona.
-                4. "precioMaximo": precio máximo en números si el cliente menciona un límite de precio.
-                5. "ingredientesExcluir": SOLO ingredientes que el cliente NO quiere o mencionó como alergia. Ej: "sin cebolla", "alérgico al gluten". NUNCA pongas aquí ingredientes que el cliente quiere comer.
-                6. "mensaje": mensaje amigable explicando qué encontraste.
+                1. "busqueda": nombre del plato que el cliente busca. Solo para búsqueda por nombre de plato, no por ingrediente. Ej: "quiero hamburguesa" → busqueda: "hamburguesa".
+                2. "ingredientesRequeridos": ingredientes que el plato DEBE tener TODOS (AND). Usá cuando el cliente dice "con X y con Y". Ej: "con pollo y arroz" → ["Pollo", "Arroz"].
+                3. "ingredientesCualquiera": ingredientes donde el plato debe tener AL MENOS UNO (OR). Usá cuando el cliente dice "con X o Y". Ej: "con arepa o pan" → ["Arepa", "Pan"].
+                4. "caracteristicas": usá únicamente nombres de la lista disponible. Ej: "picante" → ["Picante"].
+                5. "categoria": usá únicamente los valores válidos o null si no se menciona.
+                6. "precioMaximo": precio máximo en números si el cliente menciona un límite de precio.
+                7. "ingredientesExcluir": SOLO ingredientes que el cliente NO quiere o mencionó como alergia. NUNCA pongas aquí ingredientes que el cliente quiere comer.
+                8. "mensaje": mensaje amigable explicando qué encontraste.
 
                 EJEMPLOS:
-                - "Quiero comer algo con carne" → busqueda: "Carne de res", ingredientesExcluir: []
+                - "Quiero algo con pollo y arroz" → ingredientesRequeridos: ["Pollo", "Arroz"]
+                - "Quiero algo con arepa o pan" → ingredientesCualquiera: ["Arepa", "Pan"]
                 - "Quiero una hamburguesa sin cebolla" → busqueda: "hamburguesa", ingredientesExcluir: ["Cebolla"]
                 - "Algo picante que cueste menos de 20000" → caracteristicas: ["Picante"], precioMaximo: 20000
 
@@ -98,6 +101,8 @@ public class BusquedaService {
                 {
                   "mensaje": "string",
                   "busqueda": "string o null",
+                  "ingredientesRequeridos": [],
+                  "ingredientesCualquiera": [],
                   "caracteristicas": [],
                   "categoria": "string o null",
                   "precioMaximo": number o null,
@@ -118,22 +123,26 @@ public class BusquedaService {
             String json = groqClient.enviar(prompt);
             return objectMapper.readValue(json, LlmParseResult.class);
         } catch (Exception e) {
-            // log.error("Error al llamar a Groq: {}", e.getMessage(), e);
+            log.error("Error al llamar a Groq: {}", e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "El servicio de búsqueda inteligente no está disponible en este momento");
         }
     }
 
-    /** Aplica los filtros extraídos por Gemini en secuencia. */
+    /** Aplica en secuencia los filtros extraídos por el LLM sobre la lista de platos. */
     private List<Plato> filtrar(List<Plato> platos, LlmParseResult parsed) {
         return platos.stream()
                 .filter(p -> filtrarPorCategoria(p, parsed.getCategoria()))
                 .filter(p -> filtrarPorCaracteristicas(p, parsed.getCaracteristicas()))
                 .filter(p -> filtrarPorBusqueda(p, parsed.getBusqueda()))
+                .filter(p -> filtrarPorIngredientesRequeridos(p, parsed.getIngredientesRequeridos()))
+                .filter(p -> filtrarPorIngredientesCualquiera(p, parsed.getIngredientesCualquiera()))
+                .filter(p -> filtrarPorIngredientesExcluir(p, parsed.getIngredientesExcluir()))
                 .filter(p -> filtrarPorPrecio(p, parsed.getPrecioMaximo()))
                 .toList();
     }
 
+    /** Filtra por categoría del plato. Si la categoría es nula o inválida, no descarta el plato. */
     private boolean filtrarPorCategoria(Plato plato, String categoria) {
         if (categoria == null || categoria.isBlank()) return true;
         try {
@@ -145,6 +154,7 @@ public class BusquedaService {
 
     /**
      * Filtra platos cuyo ingrediente tenga al menos una de las características indicadas.
+     * Usa contains en ambas direcciones para tolerar nombres parciales (ej: "pescado" encuentra "con pescado").
      * Requiere @Transactional para acceder a la colección lazy Ingrediente.caracteristicas.
      */
     private boolean filtrarPorCaracteristicas(Plato plato, List<String> caracteristicas) {
@@ -153,22 +163,72 @@ public class BusquedaService {
         return plato.getIngredientes().stream()
                 .flatMap(pi -> pi.getIngrediente().getCaracteristicas().stream())
                 .map(c -> c.getNombre().toLowerCase())
-                .anyMatch(buscadas::contains);
+                .anyMatch(c -> buscadas.stream().anyMatch(b -> c.contains(b) || b.contains(c)));
     }
 
-    /** Filtra por nombre, descripción o ingredientes del plato (case-insensitive). */
+    /**
+     * Filtra platos que contienen TODOS los ingredientes indicados (operador AND).
+     * Busca en nombre del ingrediente y en sus características, para que "pescado"
+     * encuentre ingredientes como "Mojarra" que tienen la característica "con pescado".
+     */
+    private boolean filtrarPorIngredientesRequeridos(Plato plato, List<String> requeridos) {
+        if (requeridos == null || requeridos.isEmpty()) return true;
+        return requeridos.stream()
+                .map(String::toLowerCase)
+                .allMatch(r -> plato.getIngredientes().stream()
+                        .anyMatch(pi -> pi.getIngrediente().getNombre().toLowerCase().contains(r)
+                                || pi.getIngrediente().getCaracteristicas().stream()
+                                        .anyMatch(c -> c.getNombre().toLowerCase().contains(r))));
+    }
+
+    /**
+     * Filtra platos que contienen AL MENOS UNO de los ingredientes indicados (operador OR).
+     * Busca en nombre del ingrediente y en sus características, para que "pescado"
+     * encuentre ingredientes como "Mojarra" que tienen la característica "con pescado".
+     */
+    private boolean filtrarPorIngredientesCualquiera(Plato plato, List<String> cualquiera) {
+        if (cualquiera == null || cualquiera.isEmpty()) return true;
+        return cualquiera.stream()
+                .map(String::toLowerCase)
+                .anyMatch(c -> plato.getIngredientes().stream()
+                        .anyMatch(pi -> pi.getIngrediente().getNombre().toLowerCase().contains(c)
+                                || pi.getIngrediente().getCaracteristicas().stream()
+                                        .anyMatch(car -> car.getNombre().toLowerCase().contains(c))));
+    }
+
+    /**
+     * Filtra por nombre, descripción, ingredientes o características del plato (case-insensitive).
+     * Incluir características permite que "pescado" encuentre platos con ingredientes con característica "con pescado".
+     */
     private boolean filtrarPorBusqueda(Plato plato, String busqueda) {
         if (busqueda == null || busqueda.isBlank()) return true;
         String term = busqueda.toLowerCase();
         return plato.getNombre().toLowerCase().contains(term)
                 || (plato.getDescripcion() != null && plato.getDescripcion().toLowerCase().contains(term))
                 || plato.getIngredientes().stream()
-                        .anyMatch(pi -> pi.getIngrediente().getNombre().toLowerCase().contains(term));
+                        .anyMatch(pi -> pi.getIngrediente().getNombre().toLowerCase().contains(term))
+                || plato.getIngredientes().stream()
+                        .flatMap(pi -> pi.getIngrediente().getCaracteristicas().stream())
+                        .anyMatch(c -> c.getNombre().toLowerCase().contains(term));
     }
 
+    /** Filtra platos cuyo precio sea menor o igual al máximo indicado. */
     private boolean filtrarPorPrecio(Plato plato, BigDecimal precioMaximo) {
         if (precioMaximo == null) return true;
         return plato.getPrecio().compareTo(precioMaximo) <= 0;
+    }
+
+    /**
+     * Excluye platos donde el ingrediente no deseado es OBLIGATORIO.
+     * Si el ingrediente es opcional, el plato se mantiene — puede pedirse sin él.
+     */
+    private boolean filtrarPorIngredientesExcluir(Plato plato, List<String> excluir) {
+        if (excluir == null || excluir.isEmpty()) return true;
+        return excluir.stream()
+                .map(String::toLowerCase)
+                .noneMatch(e -> plato.getIngredientes().stream()
+                        .anyMatch(pi -> pi.getIngrediente().getNombre().toLowerCase().contains(e)
+                                && pi.getObligatorio()));
     }
 
     /** Busca en la BD los IDs de los ingredientes mencionados por el cliente para excluir. */
@@ -184,6 +244,7 @@ public class BusquedaService {
                 .toList();
     }
 
+    /** Convierte una entidad Plato al DTO de respuesta con sus ingredientes. */
     private PlatoResponse toResponse(Plato plato) {
         List<IngredienteEnPlatoResponse> ingredientes = plato.getIngredientes().stream()
                 .map(pi -> IngredienteEnPlatoResponse.builder()

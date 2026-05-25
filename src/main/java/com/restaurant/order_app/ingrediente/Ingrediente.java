@@ -2,6 +2,7 @@ package com.restaurant.order_app.ingrediente;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 
 import java.util.List;
 
@@ -29,5 +30,6 @@ public class Ingrediente {
             joinColumns = @JoinColumn(name = "ingrediente_id"),
             inverseJoinColumns = @JoinColumn(name = "caracteristica_id")
     )
+    @BatchSize(size = 50)
     private List<Caracteristica> caracteristicas;
 }

@@ -4,16 +4,6 @@ Backend para una plataforma de gestión de pedidos en restaurantes, desarrollado
 
 ---
 
-## Estado actual
-
-Este proyecto es un esqueleto inicial. Lo que existe hoy:
-
-- Endpoint `/health` funcional
-- Estructura de paquetes lista para crecer
-- Base de datos H2 en memoria para desarrollo
-
----
-
 ## Stack
 
 | Tecnología      | Versión |
@@ -22,63 +12,41 @@ Este proyecto es un esqueleto inicial. Lo que existe hoy:
 | Spring Boot     | 4.0.6   |
 | Spring Web MVC  | —       |
 | Spring Data JPA | —       |
+| Spring Security | —       |
+| jjwt            | 0.12.6  |
+| Lombok          | —       |
 | Maven           | —       |
 
-**Base de datos por entorno:**
-
-| Entorno    | Base de Datos              |
-|------------|----------------------------|
-| Desarrollo | H2 (en memoria)            |
-| Producción | PostgreSQL *(pendiente)*   |
+**Base de datos:** PostgreSQL (Render) — tanto en local como en producción.
 
 ---
 
-## Estructura del proyecto
+## Módulos implementados
 
-```
-src/main/java/com/restaurant/order_app/
-
-└── health/
-    ├── HealthController.java
-    ├── HealthService.java
-    └── HealthResponse.java
-```
-
-La estructura está preparada para crecer con módulos como `order/`, `menu/`, `user/`, `config/`, `shared/` y `exception/`. Cada módulo manejará sus propias capas: `controller`, `service`, `repository`, `dto` y `entity`.
+| Módulo | Endpoints | Descripción |
+|--------|-----------|-------------|
+| Auth | `POST /auth/cliente/{mesaId}`, `POST /auth/login` | JWT para clientes (por QR) y staff (usuario/contraseña) |
+| Platos | `GET /platos`, `GET /platos/{id}`, `GET /platos/categoria/{cat}` | Menú con ingredientes y flag obligatorio |
+| Pedidos | `POST /pedido`, `GET /pedido`, `PATCH /pedido/item/{id}/estado`, `DELETE /pedido/{id}/item/{id}` | Gestión completa de pedidos por rol |
+| Búsqueda IA | `POST /menu/buscar` | Búsqueda en lenguaje natural usando Groq / Llama 3.1 |
 
 ---
 
 ## Cómo correr el proyecto
 
-### Modo desarrollo (H2 en memoria)
+### Cómo correr localmente
 
-No requiere ninguna configuración. Ideal para desarrollar sin depender de una BD externa.
-
-```bash
-git clone <repository-url>
-./mvnw spring-boot:run
-```
-
-La aplicación inicia en `http://localhost:8080`.  
-La consola H2 queda disponible en `http://localhost:8080/h2-console`.
-
----
-
-### Modo producción (PostgreSQL)
-
-Para conectarse a una BD PostgreSQL real (por ejemplo la de Render):
-
-**1. Crear el archivo `.env`** en la raíz del proyecto (no se sube al repo):
+**1. Crear `.env`** en la raíz (no se sube al repo):
 
 ```
-SPRING_PROFILES_ACTIVE=prod
 DB_URL=jdbc:postgresql://<host>/<dbname>
 DB_USER=<usuario>
 DB_PASSWORD=<contraseña>
 JWT_SECRET=<clave-secreta-minimo-32-caracteres>
+GROQ_API_KEY=gsk_...
 ```
 
-**2. Crear el archivo `run-local.ps1`** en la raíz del proyecto (no se sube al repo):
+**2. Crear `run-local.ps1`** en la raíz (no se sube al repo):
 
 ```powershell
 Get-Content .env | ForEach-Object {
@@ -86,53 +54,54 @@ Get-Content .env | ForEach-Object {
         [System.Environment]::SetEnvironmentVariable($Matches[1].Trim(), $Matches[2].Trim(), 'Process')
     }
 }
-
 ./mvnw spring-boot:run
 ```
 
-**3. Ejecutarlo:**
+**3. Ejecutar:**
 
 ```powershell
 .\run-local.ps1
 ```
 
-El script carga las variables del `.env` solo para ese proceso — no modifica el sistema ni otros proyectos.
+---
+
+## Variables de entorno
+
+| Variable | Descripción | Requerida en |
+|----------|-------------|--------------|
+| `DB_URL` | JDBC URL de PostgreSQL | prod |
+| `DB_USER` | Usuario de la BD | prod |
+| `DB_PASSWORD` | Contraseña de la BD | prod |
+| `JWT_SECRET` | Clave para firmar tokens JWT (mín. 32 chars) | todos |
+| `GROQ_API_KEY` | API key de Groq — obtener en [console.groq.com/keys](https://console.groq.com/keys) | todos |
 
 ---
 
-### Perfiles disponibles
+## Estructura de paquetes
 
-| Perfil | Archivo de config | Base de datos | Cómo activar |
-|--------|-------------------|---------------|--------------|
-| `default` (dev) | `application.yml` | H2 en memoria | `./mvnw spring-boot:run` |
-| `prod` | `application-prod.yml` | PostgreSQL | `SPRING_PROFILES_ACTIVE=prod` |
-
----
-
-## Endpoints disponibles
-
-### `GET /health`
-
-```json
-{
-  "status": "UP",
-  "message": "Backend Running",
-  "timestamp": "2026-05-20T15:30:00"
-}
+```
+src/main/java/com/restaurant/order_app/
+├── auth/           → JWT, filtros, Security config
+├── usuario/        → @Entity Usuario, Rol (COCINERO, MESERO)
+├── mesa/           → @Entity Mesa
+├── ingrediente/    → @Entity Ingrediente, Caracteristica
+├── plato/          → @Entity Plato, PlatoIngrediente, Categoria
+├── item/           → @Entity ItemPedido, EstadoItem
+├── pedido/         → @Entity Pedido, lógica de negocio por rol
+├── busqueda/       → GroqClient, BusquedaService, DTOs de IA
+├── config/         → RestTemplate, ObjectMapper beans
+└── exception/      → MensajeResponse record
 ```
 
 ---
 
-## Roadmap
+## Documentación adicional
 
-- [ ] Módulo de menú (CRUD de productos)
-- [ ] Módulo de pedidos
-- [ ] Módulo de usuarios y roles
-- [ ] Autenticación con Spring Security + JWT
-- [ ] Migración a PostgreSQL con perfiles de entorno
-- [ ] Dockerización
-- [ ] Documentación de API con SpringDoc / OpenAPI
-- [ ] Despliegue en Render
+| Recurso | Contenido |
+|---------|-----------|
+| `docs/Resumen de requerimientos.md` | Endpoints completos, respuestas, validaciones y arquitectura |
+| `docs/Guia de implementacion.md` | Paso a paso de implementación con seed data |
+| [API Dog](https://f6ixzhukyd.apidog.io/) | Documentación interactiva de todos los endpoints |
 
 ---
 

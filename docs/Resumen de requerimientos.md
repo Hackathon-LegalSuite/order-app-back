@@ -1,49 +1,39 @@
-# 🍽️ Restaurant Order App — API Endpoints
+# Restaurant Order App — API Endpoints
 
-Base URL: `https://<tu-app>.onrender.com/api`
+Base URL: `https://<tu-app>.onrender.com`
 
 > **Alcance del proyecto (Hackathon)**
-> - ✅ Flujo completo del cliente/consumidor (prioridad)
-> - ✅ Flujo del cocinero — actualización de estado de platos por pedido
-> - ✅ Pantalla de despacho para meseros — platos listos para entregar
-> - ✅ Confirmación de entrega por parte del mesero
+> - Flujo completo del cliente/consumidor
+> - Vista del cocinero — actualización de estado de platos
+> - Pantalla de despacho para meseros
+> - Búsqueda inteligente del menú con IA (Groq / Llama)
 
 ---
 
-## 🔐 Autenticación
+## Autenticación
 
 ### Cliente (acceso por QR)
 
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| `POST` | `/auth/cliente/{mesaId}` | Login por QR. Valida que el código ingresado corresponda a la mesa del path. Retorna JWT de 6h |
-
-> El `mesaId` viene embebido en la URL del QR (ej: `restaurante.com/mesa=1`). El cliente ingresa el código visible en la mesa (ej: `MESA-05`). El backend valida que ambos correspondan a la misma mesa.
+| `POST` | `/auth/cliente/{mesaId}` | Login por QR. Valida código de mesa. Retorna JWT de 6h |
 
 **Body:**
 ```json
-{
-  "nombre": "Juan",
-  "codigoMesa": "MESA-05"
-}
+{ "nombre": "Juan", "codigoMesa": "MESA-05" }
 ```
 
 **Response:**
 ```json
-{
-  "token": "eyJhbGci...",
-  "rol": "CLIENTE",
-  "nombre": "Juan",
-  "mesaId": 5,
-  "expiresIn": "6h"
-}
+{ "token": "eyJhbGci...", "rol": "CLIENTE", "nombre": "Juan", "mesaId": 5, "expiresIn": "6h" }
 ```
 
-**Errores posibles:**
+El JWT del cliente incluye `mesaId` y `clienteId` (UUID único de sesión) como claims.
+
 | Código | Motivo |
 |--------|--------|
-| `404` | La mesa con ese ID no existe |
-| `400` | El código ingresado no corresponde a esa mesa |
+| `404` | Mesa no encontrada |
+| `400` | Código no corresponde a esa mesa |
 
 ---
 
@@ -55,33 +45,27 @@ Base URL: `https://<tu-app>.onrender.com/api`
 
 **Body:**
 ```json
-{
-  "username": "cocinero01",
-  "password": "1234"
-}
+{ "username": "cocinero01", "password": "1234" }
 ```
 
 **Response:**
 ```json
-{
-  "token": "eyJhbGci...",
-  "rol": "COCINERO",
-  "nombre": "Carlos"
-}
+{ "token": "eyJhbGci...", "rol": "COCINERO", "nombre": "Carlos" }
 ```
 
-> Roles disponibles en el sistema: `COCINERO`, `MESERO`
-> 🔑 Todos los endpoints siguientes requieren `Authorization: Bearer <token>` en el header.
+> Todos los endpoints siguientes requieren `Authorization: Bearer <token>` en el header.
 
 ---
 
-## 🍔 Menú — Platos (lectura pública para el cliente)
+## Menú — Platos
 
-| Método | Endpoint | Descripción | Rol |
-|--------|----------|-------------|-----|
-| `GET` | `/platos` | Listar todos los platos del menú | CLIENTE |
-| `GET` | `/platos/{id}` | Obtener detalle de un plato con sus ingredientes | CLIENTE |
-| `GET` | `/platos/categoria/{categoria}` | Filtrar platos por categoría | CLIENTE |
+| Método | Endpoint | Acceso | Descripción |
+|--------|----------|--------|-------------|
+| `GET` | `/platos` | CLIENTE | Listar todos los platos con sus ingredientes |
+| `GET` | `/platos/{id}` | CLIENTE | Detalle de un plato por ID |
+| `GET` | `/platos/categoria/{categoria}` | CLIENTE | Filtrar por categoría |
+
+Categorías válidas: `ENTRADA`, `BEBIDA`, `PLATO_FUERTE`, `POSTRE`
 
 **Response `GET /platos`:**
 ```json
@@ -92,466 +76,252 @@ Base URL: `https://<tu-app>.onrender.com/api`
     "descripcion": "Carne de res, lechuga, tomate y papas fritas",
     "precio": 18500,
     "categoria": "PLATO_FUERTE",
+    "imagenUrl": "https://...",
     "ingredientes": [
       { "id": 1, "nombre": "Carne de res", "obligatorio": true },
-      { "id": 2, "nombre": "Lechuga",      "obligatorio": false },
-      { "id": 3, "nombre": "Tomate",       "obligatorio": false },
-      { "id": 4, "nombre": "Cebolla",      "obligatorio": false }
-    ]
-  },
-  {
-    "id": 7,
-    "nombre": "Limonada de Coco",
-    "descripcion": "Limonada natural con coco",
-    "precio": 8000,
-    "categoria": "BEBIDA",
-    "preparada": true,
-    "ingredientes": [
-      { "id": 9, "nombre": "Limón",  "obligatorio": true },
-      { "id": 10, "nombre": "Coco", "obligatorio": true }
+      { "id": 2, "nombre": "Lechuga",      "obligatorio": false }
     ]
   }
 ]
 ```
 
-> Categorías: `ENTRADA`, `BEBIDA`, `PLATO_FUERTE`, `POSTRE`
-> `preparada: true` = elaborada en cocina | `preparada: false` = embotellada
+`preparada` solo aparece en bebidas (`true` = elaborada en cocina, `false` = embotellada). `imagenUrl` se omite si no está asignada.
 
 ---
 
-## 📋 Pedidos — Flujo del Cliente
+## Búsqueda inteligente con IA
 
-| Método | Endpoint | Descripción | Rol |
-|--------|----------|-------------|-----|
-| `POST` | `/pedidos` | Crear un nuevo pedido desde la mesa | CLIENTE |
-| `GET`  | `/pedidos/mesa/{mesaId}` | Ver los pedidos activos de la mesa del cliente | CLIENTE |
+| Método | Endpoint | Acceso | Descripción |
+|--------|----------|--------|-------------|
+| `POST` | `/menu/buscar` | CLIENTE | Interpreta lenguaje natural y filtra el menú |
 
-**Body `POST /pedidos`:**
+**Body:**
+```json
+{ "prompt": "Quiero algo con carne que no sea muy caro" }
+```
+
+**Response:**
 ```json
 {
-  "mesaId": 5,
-  "clienteNombre": "Juan",
+  "mensaje": "Encontré estos platos con carne para vos.",
+  "ingredientesExcluir": [
+    { "id": 4, "nombre": "Cebolla" }
+  ],
+  "platos": [ ... ]
+}
+```
+
+El LLM (Groq / Llama 3.1) actúa como **parser de intención**: extrae `busqueda`, `categoria`, `caracteristicas`, `precioMaximo` e `ingredientesExcluir` del texto libre. El filtrado real lo hace la aplicación sobre la BD. `ingredientesExcluir` devuelve los IDs listos para usar en `POST /pedido`. Cada llamada es independiente — sin historial de sesión.
+
+| Código | Motivo |
+|--------|--------|
+| `400` | `prompt` vacío |
+| `503` | Groq no respondió o devolvió formato inesperado |
+
+---
+
+## Pedidos
+
+| Método | Endpoint | Acceso | Descripción |
+|--------|----------|--------|-------------|
+| `POST` | `/pedido` | CLIENTE | Crear nuevo pedido |
+| `GET`  | `/pedido` | TODOS  | Ver ítems (respuesta varía según rol) |
+| `PATCH` | `/pedido/item/{itemId}/estado` | TODOS | Avanzar estado del ítem |
+| `DELETE` | `/pedido/{pedidoId}/item/{itemId}` | CLIENTE | Eliminar ítem del pedido |
+
+### POST /pedido
+
+Mesa y nombre del cliente se extraen del JWT — el body solo lleva los ítems.
+
+**Body:**
+```json
+{
   "items": [
-    {
-      "platoId": 1,
-      "ingredientesExcluidos": [2, 3]
-    },
-    {
-      "platoId": 7,
-      "ingredientesExcluidos": []
-    }
+    { "platoId": 1, "ingredientesExcluidos": [2, 3] },
+    { "platoId": 4, "ingredientesExcluidos": [] }
   ]
 }
 ```
 
-> ⚠️ `ingredientesExcluidos` solo acepta IDs de ingredientes con `obligatorio: false`.
-> El backend debe validar esto y retornar `400 Bad Request` si se intenta excluir un ingrediente obligatorio.
+> `ingredientesExcluidos` solo acepta IDs con `obligatorio: false` → si no, `400`.
 
-**Response `POST /pedidos`:**
-```json
-{
-  "pedidoId": 42,
-  "mesaId": 5,
-  "estado": "EN_ESPERA",
-  "items": [
-    {
-      "platoId": 1,
-      "nombre": "Hamburguesa Clásica",
-      "ingredientesExcluidos": ["Lechuga", "Tomate"],
-      "estado": "EN_ESPERA"
-    },
-    {
-      "platoId": 7,
-      "nombre": "Limonada de Coco",
-      "ingredientesExcluidos": [],
-      "estado": "EN_ESPERA"
-    }
-  ],
-  "creadoEn": "2025-05-21T14:30:00Z"
-}
-```
+### GET /pedido — respuesta según rol
 
-**Response `GET /pedidos/mesa/{mesaId}`:**
+| Rol | Ítems que ve | Filtro de estado | Campos `mesa` y `mesero` |
+|-----|-------------|-----------------|--------------------------|
+| CLIENTE | Solo los de su sesión (`clienteSessionId`) | Todos | No aparecen |
+| COCINERO | Todos, todas las mesas | `EN_ESPERA` y `EN_PROGRESO` | Sí |
+| MESERO | Solo sus mesas asignadas | `LISTO` | Sí |
+
+**Response:**
 ```json
 [
   {
-    "pedidoId": 42,
-    "items": [
-      {
-        "nombre": "Hamburguesa Clásica",
-        "ingredientesExcluidos": ["Lechuga", "Tomate"],
-        "estado": "EN_PROGRESO"
-      },
-      {
-        "nombre": "Limonada de Coco",
-        "ingredientesExcluidos": [],
-        "estado": "LISTO"
-      }
-    ]
+    "pedidoId": 1,
+    "itemId": 3,
+    "platoId": 1,
+    "platoNombre": "Hamburguesa Clásica",
+    "precio": 18500,
+    "imagenUrl": "https://...",
+    "ingredientes": [
+      { "id": 1, "nombre": "Carne de res", "obligatorio": true },
+      { "id": 2, "nombre": "Lechuga",      "obligatorio": false }
+    ],
+    "ingredientesExcluidos": ["Lechuga"],
+    "estado": "EN_ESPERA",
+    "mesa": 5,
+    "mesero": "Álvaro"
   }
 ]
 ```
 
----
+`mesa` y `mesero` usan `@JsonInclude(NON_NULL)` — no aparecen para CLIENTE.
 
-## 👨‍🍳 Cocina — Flujo del Cocinero
+### PATCH /pedido/item/{itemId}/estado
 
-> El cocinero ve todos los platos **pendientes de preparación** (EN_ESPERA o EN_PROGRESO) en una sola pantalla. Desde ahí puede actualizar el estado de cada plato individualmente hasta marcarlo como `LISTO`.
-> Una vez marcado `LISTO`, el plato desaparece de la vista de cocina y pasa a la pantalla de despacho del mesero.
+Sin body. Avanza automáticamente al siguiente estado:
 
-| Método | Endpoint | Descripción | Rol |
-|--------|----------|-------------|-----|
-| `GET`  | `/cocina/platos` | Listar todos los platos en preparación (EN_ESPERA, EN_PROGRESO) | COCINERO |
-| `PATCH`| `/cocina/items/{itemId}/estado` | Actualizar el estado de un plato (hasta LISTO) | COCINERO |
-
-**Response `GET /cocina/platos`:**
-```json
-[
-  {
-    "itemId": 101,
-    "pedidoId": 42,
-    "mesa": 5,
-    "clienteNombre": "Juan",
-    "plato": "Hamburguesa Clásica",
-    "ingredientesExcluidos": ["Lechuga", "Tomate"],
-    "estado": "EN_ESPERA"
-  },
-  {
-    "itemId": 102,
-    "pedidoId": 42,
-    "mesa": 5,
-    "clienteNombre": "Juan",
-    "plato": "Limonada de Coco",
-    "ingredientesExcluidos": [],
-    "estado": "EN_PROGRESO"
-  },
-  {
-    "itemId": 110,
-    "pedidoId": 45,
-    "mesa": 1,
-    "clienteNombre": "Álvaro",
-    "plato": "Bandeja Paisa",
-    "ingredientesExcluidos": [],
-    "estado": "EN_ESPERA"
-  }
-]
+```
+EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO
 ```
 
-**Body `PATCH /cocina/items/{itemId}/estado`:**
-```json
-{
-  "estado": "EN_PROGRESO"
-}
-```
+No se puede retroceder. Si ya está en `ENTREGADO` → `400`.
 
-> Estados válidos para el cocinero: `EN_ESPERA → EN_PROGRESO → LISTO`
-> El backend valida que no se pueda retroceder un estado.
-> Una vez en `LISTO`, el ítem desaparece de `/cocina/platos` y aparece en `/despacho/platos`.
+### DELETE /pedido/{pedidoId}/item/{itemId}
+
+Solo el cliente que creó el pedido puede eliminarlo (`clienteSessionId` del JWT). Solo ítems en `EN_ESPERA` → si ya empezó a cocinarse, `400`. Si era el último ítem del pedido, el pedido se elimina también.
 
 ---
 
-## 🖥️ Pantalla de Despacho — Flujo del Mesero
-
-> Vista de platos **listos para entregar**. Muestra únicamente los ítems con estado `LISTO`. Cuando el mesero entrega el plato, lo marca como `ENTREGADO` y desaparece de la pantalla.
-
-| Método | Endpoint | Descripción | Rol |
-|--------|----------|-------------|-----|
-| `GET`  | `/despacho/platos` | Listar todos los platos con estado LISTO (pendientes de entrega) | MESERO, COCINERO |
-| `PATCH`| `/despacho/items/{itemId}/estado` | Marcar un plato como ENTREGADO | MESERO |
-
-**Response `GET /despacho/platos`:**
-```json
-[
-  {
-    "itemId": 101,
-    "pedidoId": 42,
-    "mesa": 5,
-    "clienteNombre": "Juan",
-    "meseroEncargado": "Álvaro",
-    "plato": "Hamburguesa Clásica",
-    "ingredientesExcluidos": ["Lechuga", "Tomate"],
-    "estado": "LISTO"
-  },
-  {
-    "itemId": 102,
-    "pedidoId": 42,
-    "mesa": 5,
-    "clienteNombre": "Juan",
-    "meseroEncargado": "Álvaro",
-    "plato": "Limonada de Coco",
-    "ingredientesExcluidos": [],
-    "estado": "LISTO"
-  }
-]
-```
-
-> Solo aparecen ítems con `estado: "LISTO"`. Los ítems `ENTREGADO` ya no se muestran.
-
-**Body `PATCH /despacho/items/{itemId}/estado`:**
-```json
-{
-  "estado": "ENTREGADO"
-}
-```
-
-> Esta transición solo la puede realizar un usuario con rol `MESERO`.
-> Solo es válida desde `LISTO → ENTREGADO`. Cualquier otra transición retorna `400 Bad Request`.
-
----
-
-## ⚠️ Validaciones clave del backend
-
-| Regla | Detalle |
-|-------|---------|
-| Ingredientes obligatorios | Si `ingredientesExcluidos` contiene un `ingredienteId` con `obligatorio: true` → `400 Bad Request` |
-| Transición de estados | Solo se permite avanzar: `EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO`. Retroceder → `400 Bad Request` |
-| Transición por rol | `EN_ESPERA → LISTO`: solo `COCINERO`. `LISTO → ENTREGADO`: solo `MESERO` |
-| JWT Cliente | Expira en 6 horas. Asociado a la mesa, no a un usuario registrado |
-| JWT Staff | Acceso por rol: el `COCINERO` no puede operar en despacho; el `MESERO` no puede operar en cocina |
-| Pedido por mesa | Una mesa puede tener múltiples pedidos activos (el cliente puede pedir en rondas) |
-
----
-
-## 📁 Estructura de paquetes (Spring Boot)
-
-### `auth/`
-> Maneja autenticación y generación de tokens JWT para clientes y staff.
-
-```
-auth/
-├── AuthController.java       → /auth/cliente, /auth/login
-├── AuthService.java
-└── JwtUtil.java
-```
-
-**Entidades:** ninguna propia (usa `Usuario` y `Mesa`)
-**Tablas BD:** ninguna propia
-
----
-
-### `usuario/`
-> Representa a los usuarios del sistema con rol (cocinero o mesero). Los datos se cargan directamente en BD, no hay registro por pantalla.
-
-```
-usuario/
-├── Usuario.java              → @Entity
-├── UsuarioRepository.java
-└── Rol.java                  → @Enum: COCINERO, MESERO
-```
-
-**Entidad `Usuario`:**
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | `Long` PK | Identificador |
-| `username` | `String` | Nombre de usuario para login |
-| `password` | `String` | Contraseña encriptada (BCrypt) |
-| `nombre` | `String` | Nombre visible |
-| `rol` | `Enum` | `COCINERO` \| `MESERO` |
-
-**Tabla BD:** `usuarios`
-
----
-
-### `mesa/`
-> Representa las mesas del restaurante. Cada mesa tiene un código único que va en el QR.
-
-```
-mesa/
-├── Mesa.java                 → @Entity
-└── MesaRepository.java
-```
-
-**Entidad `Mesa`:**
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | `Long` PK | Identificador |
-| `numero` | `Integer` | Número visible de la mesa |
-| `codigoQr` | `String` | Código único del QR (ej: `MESA-05`) |
-| `mesero` | `Usuario` FK | Mesero asignado a esa mesa (rol `MESERO`) |
-
-**Tabla BD:** `mesas`
-
----
-
-### `ingrediente/`
-> Ingredientes que pueden pertenecer a uno o varios platos. Cada uno tiene características y se marca si es obligatorio a nivel de plato.
-
-```
-ingrediente/
-├── Ingrediente.java          → @Entity
-├── IngredienteRepository.java
-└── Caracteristica.java       → @Enum
-```
-
-**Entidad `Ingrediente`:**
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | `Long` PK | Identificador |
-| `nombre` | `String` | Nombre del ingrediente |
-| `caracteristicas` | `List<Enum>` | picante, salado, dulce, acido, amargo, alcohol, caliente, frio, vegetariano |
-
-**Tabla BD:** `ingredientes`, `ingrediente_caracteristicas`
-
----
-
-### `plato/`
-> Platos del menú. Cada plato tiene una categoría y una lista de ingredientes con su carácter obligatorio u opcional.
-
-```
-plato/
-├── Plato.java                → @Entity
-├── PlatoIngrediente.java     → @Entity (tabla intermedia con obligatorio)
-├── PlatoController.java      → /platos, /platos/{id}, /platos/categoria/{cat}
-├── PlatoService.java
-├── PlatoRepository.java
-└── Categoria.java            → @Enum: ENTRADA, BEBIDA, PLATO_FUERTE, POSTRE
-```
-
-**Entidad `Plato`:**
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | `Long` PK | Identificador |
-| `nombre` | `String` | Nombre del plato |
-| `descripcion` | `String` | Descripción breve |
-| `precio` | `BigDecimal` | Precio |
-| `categoria` | `Enum` | `ENTRADA` \| `BEBIDA` \| `PLATO_FUERTE` \| `POSTRE` |
-| `preparada` | `Boolean` | Solo para `BEBIDA`: true = preparada, false = embotellada |
-| `ingredientes` | `List<PlatoIngrediente>` | Relación con ingredientes |
-
-**Entidad `PlatoIngrediente`** *(tabla intermedia)*:
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | `Long` PK | Identificador |
-| `plato` | `Plato` FK | Plato al que pertenece |
-| `ingrediente` | `Ingrediente` FK | Ingrediente |
-| `obligatorio` | `Boolean` | Si el ingrediente puede excluirse o no |
-
-**Tablas BD:** `platos`, `plato_ingredientes`
-
----
-
-### `pedido/`
-> Pedido realizado por un cliente desde su mesa. Contiene los ítems (platos) solicitados.
-
-```
-pedido/
-├── Pedido.java               → @Entity
-├── PedidoController.java     → /pedidos, /pedidos/mesa/{mesaId}
-├── PedidoService.java
-└── PedidoRepository.java
-```
-
-**Entidad `Pedido`:**
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | `Long` PK | Identificador |
-| `mesa` | `Mesa` FK | Mesa desde donde se realizó |
-| `clienteNombre` | `String` | Nombre del cliente |
-| `creadoEn` | `LocalDateTime` | Timestamp de creación |
-| `items` | `List<ItemPedido>` | Platos del pedido |
-
-**Tabla BD:** `pedidos`
-
----
-
-### `item/`
-> Ítem individual dentro de un pedido: un plato específico con sus ingredientes excluidos y su estado de preparación.
-
-```
-item/
-├── ItemPedido.java           → @Entity
-├── ItemService.java
-├── ItemRepository.java
-└── EstadoItem.java           → @Enum: EN_ESPERA, EN_PROGRESO, LISTO, ENTREGADO
-```
-
-> No tiene controller propio. Las actualizaciones de estado se exponen desde `cocina/` (COCINERO) y `despacho/` (MESERO).
-
-**Entidad `ItemPedido`:**
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| `id` | `Long` PK | Identificador |
-| `pedido` | `Pedido` FK | Pedido al que pertenece |
-| `plato` | `Plato` FK | Plato solicitado |
-| `estado` | `Enum` | `EN_ESPERA` \| `EN_PROGRESO` \| `LISTO` \| `ENTREGADO` |
-| `ingredientesExcluidos` | `List<Ingrediente>` | Ingredientes opcionales eliminados por el cliente |
-
-**Tablas BD:** `items_pedido`, `item_ingredientes_excluidos`
-
----
-
-### `cocina/`
-> Vista y control del cocinero. Muestra platos pendientes de preparación y permite avanzar su estado hasta LISTO.
-
-```
-cocina/
-├── CocinaController.java     → /cocina/platos, /cocina/items/{itemId}/estado
-└── CocinaService.java
-```
-
-**Entidades usadas:** `ItemPedido`, `Pedido`, `Mesa`, `Plato`
-**Filtro activo:** solo ítems con estado `EN_ESPERA` o `EN_PROGRESO`
-**Tablas BD:** ninguna propia
-
----
-
-### `despacho/`
-> Vista y control del mesero. Muestra solo los platos listos para entregar y permite confirmar la entrega.
-
-```
-despacho/
-├── DespachoController.java   → /despacho/platos, /despacho/items/{itemId}/estado
-└── DespachoService.java
-```
-
-**Entidades usadas:** `ItemPedido`, `Pedido`, `Mesa`, `Plato`
-**Filtro activo:** solo ítems con estado `LISTO`
-**Tablas BD:** ninguna propia
-
----
-
-## 🔄 Ciclo de vida de un ítem
+## Ciclo de vida de un ítem
 
 ```
 [CLIENTE crea pedido]
         ↓
-    EN_ESPERA          → visible en /cocina/platos
-        ↓  (COCINERO)
-   EN_PROGRESO         → visible en /cocina/platos
-        ↓  (COCINERO)
-      LISTO            → visible en /despacho/platos
-        ↓  (MESERO)
-    ENTREGADO          → no aparece en ninguna pantalla
+    EN_ESPERA          → visible para COCINERO
+        ↓  (COCINERO avanza)
+   EN_PROGRESO         → visible para COCINERO
+        ↓  (COCINERO avanza)
+      LISTO            → visible para MESERO | sigue en vista del CLIENTE
+        ↓  (MESERO avanza)
+    ENTREGADO          → solo visible para CLIENTE
 ```
 
 ---
 
-## 🗺️ Resumen de endpoints por rol
+## Mapa de endpoints por rol
 
 | Endpoint | CLIENTE | COCINERO | MESERO |
 |----------|:-------:|:--------:|:------:|
-| `POST /auth/cliente` | ✅ | — | — |
+| `POST /auth/cliente/{mesaId}` | ✅ | — | — |
 | `POST /auth/login` | — | ✅ | ✅ |
 | `GET /platos` | ✅ | — | — |
 | `GET /platos/{id}` | ✅ | — | — |
 | `GET /platos/categoria/{cat}` | ✅ | — | — |
-| `POST /pedidos` | ✅ | — | — |
-| `GET /pedidos/mesa/{mesaId}` | ✅ | — | — |
-| `GET /cocina/platos` | — | ✅ | — |
-| `PATCH /cocina/items/{itemId}/estado` | — | ✅ | — |
-| `GET /despacho/platos` | — | ✅ | ✅ |
-| `PATCH /despacho/items/{itemId}/estado` | — | — | ✅ |
+| `POST /menu/buscar` | ✅ | — | — |
+| `POST /pedido` | ✅ | — | — |
+| `GET /pedido` | ✅ | ✅ | ✅ |
+| `PATCH /pedido/item/{itemId}/estado` | — | ✅ | ✅ |
+| `DELETE /pedido/{pedidoId}/item/{itemId}` | ✅ | — | — |
 
 ---
 
-## 📋 Criterios mínimos Hackathon — Estado de cumplimiento
+## Estructura de paquetes
+
+```
+auth/
+├── AuthController.java         → /auth/cliente/{mesaId}, /auth/login
+├── AuthService.java
+├── JwtUtil.java
+├── JwtFilter.java              → valida token en cada request; almacena Claims como auth.details
+├── AuthEntryPoint.java         → respuesta 401 estructurada
+├── SecurityConfig.java
+└── dto/
+
+usuario/
+├── Usuario.java                → @Entity — implementa UserDetails
+├── UsuarioRepository.java
+└── Rol.java                    → @Enum: COCINERO, MESERO
+
+mesa/
+├── Mesa.java                   → @Entity — numero, codigoQr, mesero (FK Usuario)
+└── MesaRepository.java
+
+ingrediente/
+├── Ingrediente.java            → @Entity — nombre, caracteristicas (@ManyToMany con Caracteristica)
+├── IngredienteRepository.java
+├── Caracteristica.java         → @Entity (no enum) — nombre cargado desde BD
+└── CaracteristicaRepository.java
+
+plato/
+├── Plato.java                  → @Entity — nombre, descripcion, precio, categoria, preparada, imagenUrl
+├── PlatoIngrediente.java       → @Entity — tabla intermedia plato↔ingrediente con flag obligatorio
+├── PlatoController.java        → /platos, /platos/{id}, /platos/categoria/{cat}
+├── PlatoService.java
+├── PlatoRepository.java
+├── Categoria.java              → @Enum: ENTRADA, BEBIDA, PLATO_FUERTE, POSTRE
+└── dto/
+
+item/
+├── ItemPedido.java             → @Entity — plato, ingredientesExcluidos (List<Long>), estado
+├── ItemRepository.java
+└── EstadoItem.java             → @Enum: EN_ESPERA, EN_PROGRESO, LISTO, ENTREGADO
+
+pedido/
+├── Pedido.java                 → @Entity — mesa, clienteNombre, clienteSessionId, items (orphanRemoval=true)
+├── PedidoController.java       → /pedido (todos los verbos)
+├── PedidoService.java
+├── PedidoRepository.java
+└── dto/
+
+busqueda/
+├── GroqClient.java             → HTTP client para Groq (OpenAI-compatible)
+├── BusquedaService.java        → construye prompt, llama a Groq, filtra platos en memoria
+├── BusquedaController.java     → /menu/buscar
+└── dto/
+    ├── BusquedaRequest.java
+    ├── LlmParseResult.java     → JSON que devuelve el LLM
+    ├── BusquedaResponse.java
+    └── IngredienteExcluirInfo.java
+
+config/
+└── AppConfig.java              → @Bean RestTemplate, @Bean ObjectMapper
+
+exception/
+└── MensajeResponse.java        → record { String mensaje } para respuestas de error simples
+```
+
+---
+
+## Validaciones clave
+
+| Regla | Detalle |
+|-------|---------|
+| Ingredientes obligatorios | `ingredientesExcluidos` con `obligatorio: true` → `400` |
+| Transición de estados | Solo hacia adelante: `EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO` → retroceder es `400` |
+| Eliminación de ítem | Solo en estado `EN_ESPERA` y por el cliente que lo creó (`clienteSessionId`) |
+| `clienteSessionId` | UUID generado al login, guardado en JWT y en cada `Pedido` — identifica la sesión del cliente |
+| JWT claims | `JwtFilter` almacena el `Claims` completo en `auth.details` — los servicios extraen `mesaId`, `clienteId`, `rol` sin re-parsear el token |
+
+---
+
+## Nota de escalabilidad
+
+La implementación actual carga entidades completas con `findAll()` y aplica los filtros en memoria con Java Streams. Para el volumen del hackathon es perfectamente válido.
+
+En producción con menús grandes, los filtros deberían moverse a queries en el repositorio (`@Query` con `JOIN` y `WHERE`) para que la base de datos haga el trabajo en lugar de la JVM. La arquitectura en capas actual lo facilita — es una refactorización localizada en el repositorio, no un rediseño.
+
+---
+
+## Criterios Hackathon — Estado de cumplimiento
 
 | Criterio | Estado | Detalle |
 |----------|--------|---------|
-| **B1 Estructura por capas** | ✅ Cumplido | Controller → Service → Repository → Entity en cada módulo |
-| **B2 Endpoints RESTful** | ⚠️ En progreso | Auth implementado. Faltan platos, pedidos, cocina, despacho |
-| **B3 DTOs y validaciones** | ✅ Cumplido | DTOs separados de entidades, `@NotBlank` en requests, `@JsonInclude` en responses |
-| **B4 Manejo de excepciones** | ✅ Cumplido | `GlobalExceptionHandler` cubre 401, 404 y 500 con estructura uniforme |
-| **B5 Persistencia con JPA** | ⚠️ En progreso | `Usuario` y `Mesa` operativos. Faltan entidades de pasos 3 y 4 |
-| **B6 Configuración limpia** | ✅ Cumplido | Perfiles dev/prod separados, env vars, sin credenciales en el repo |
-| **B7 Normalización BD + modelo ER** | ⚠️ En progreso | Relación `Mesa → Usuario` normalizada. Modelo completo al finalizar todos los pasos |
+| Estructura por capas | ✅ | Controller → Service → Repository → Entity en cada módulo |
+| Endpoints RESTful | ✅ | Auth, Platos, Pedidos, Búsqueda IA implementados |
+| DTOs y validaciones | ✅ | DTOs separados, `@NotBlank`, `@JsonInclude`, validación de ingredientes obligatorios |
+| Manejo de excepciones | ✅ | `ResponseStatusException` con mensajes estructurados en todos los casos de error |
+| Persistencia con JPA | ✅ | Todas las entidades operativas, relaciones correctas, `orphanRemoval=true` en Pedido |
+| Configuración limpia | ✅ | Perfiles dev/prod, variables de entorno, sin credenciales en el repo |
+| Normalización BD | ✅ | Relaciones normalizadas, tablas intermedias para ManyToMany |
+| Componente con IA | ✅ | `POST /menu/buscar` — Groq / Llama 3.1, búsqueda en lenguaje natural |
