@@ -20,6 +20,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
@@ -46,6 +47,7 @@ public class PedidoService {
      * Crea un pedido extrayendo mesa y nombre del cliente del JWT.
      * Valida que los ingredientes excluidos sean solo opcionales.
      */
+    @Transactional
     public PedidoResponse crearPedido(CrearPedidoRequest request) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Long mesaId = getMesaIdFromToken(auth);
@@ -77,6 +79,7 @@ public class PedidoService {
      * - COCINERO: todos los ítems en EN_ESPERA o EN_PROGRESO de todas las mesas.
      * - MESERO: solo ítems en LISTO de las mesas que tiene asignadas.
      */
+    @Transactional(readOnly = true)
     public List<ConsultaItemResponse> listar() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Claims claims = (Claims) auth.getDetails();
@@ -115,6 +118,7 @@ public class PedidoService {
      * Elimina un ítem de un pedido. Si era el último ítem, elimina el pedido también.
      * Valida que el clienteSessionId del token coincida con el del pedido.
      */
+    @Transactional
     public String eliminarItem(Long pedidoId, Long itemId) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         Claims claims = (Claims) auth.getDetails();
@@ -153,6 +157,7 @@ public class PedidoService {
     }
 
     /** Avanza el estado del ítem al siguiente en la secuencia. Lanza 400 si ya está en ENTREGADO. */
+    @Transactional
     public String avanzarEstado(Long itemId) {
         ItemPedido item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Ítem no encontrado"));
