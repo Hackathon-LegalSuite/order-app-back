@@ -15,47 +15,21 @@ Cada paso es un bloque entregable. Completá uno antes de pasar al siguiente.
    - **External Database URL** — para conectarte desde tu máquina o editor local
 4. Convertir la URL al formato JDBC: `postgresql://...` → `jdbc:postgresql://...`
 
-### 1.2 Perfiles de Spring Boot
+### 1.2 Configuración — un solo perfil, siempre PostgreSQL
 
-| Perfil | Archivo | Base de datos | Cómo activar |
-|--------|---------|---------------|--------------|
-| `default` (dev) | `application.yml` | H2 en memoria | `./mvnw spring-boot:run` |
-| `prod` | `application-prod.yml` | PostgreSQL | `SPRING_PROFILES_ACTIVE=prod` |
+No hay separación dev/prod. Un único `application.yml` que lee las credenciales de variables de entorno:
 
-**`application.yml`** (dev):
 ```yaml
 spring:
   application:
     name: order-app-back
-  datasource:
-    url: jdbc:h2:mem:testdb
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    open-in-view: false
-  h2:
-    console:
-      enabled: true
-  sql:
-    init:
-      mode: never
-server:
-  port: ${PORT:8080}
-```
-
-**`application-prod.yml`** (producción):
-```yaml
-spring:
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
     show-sql: false
@@ -64,29 +38,31 @@ spring:
   sql:
     init:
       mode: never
+server:
+  port: ${PORT:8080}
 ```
 
-> `sql.init.mode: never` en ambos perfiles — el seed data se carga manualmente una sola vez por paso.
+> `open-in-view: false` cierra la sesión de Hibernate al salir del servicio. Todo método de servicio que acceda a colecciones lazy debe tener `@Transactional`.
 
 ### 1.3 Variables de entorno en Render
 
 | Variable | Valor |
 |----------|-------|
-| `SPRING_PROFILES_ACTIVE` | `prod` |
 | `DB_URL` | `jdbc:postgresql://<internal-host>/<dbname>` |
 | `DB_USER` | usuario de Render |
 | `DB_PASSWORD` | contraseña de Render |
 | `JWT_SECRET` | cadena aleatoria de mínimo 32 caracteres |
+| `GROQ_API_KEY` | API key de Groq — obtener en [console.groq.com/keys](https://console.groq.com/keys) |
 
 ### 1.4 Ejecución local contra la BD de Render
 
 Crear `.env` en la raíz (ignorado por git):
 ```
-SPRING_PROFILES_ACTIVE=prod
 DB_URL=jdbc:postgresql://<external-host>/<dbname>
 DB_USER=<usuario>
 DB_PASSWORD=<contraseña>
 JWT_SECRET=<clave-secreta>
+GROQ_API_KEY=gsk_...
 ```
 
 Crear `run-local.ps1` en la raíz (ignorado por git):
@@ -355,7 +331,7 @@ EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO
 
 ---
 
-## Paso 6 — Búsqueda inteligente con IA (Gemini)
+## Paso 6 — Búsqueda inteligente con IA (Groq / Llama)
 
 ### Dependencias a agregar en `pom.xml`
 
@@ -372,31 +348,30 @@ EN_ESPERA → EN_PROGRESO → LISTO → ENTREGADO
 
 | Variable | Descripción |
 |----------|-------------|
-| `GEMINI_API_KEY` | API Key de Google AI Studio — obtener en [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-
-Agregar a `.env` local y en las variables de entorno de Render.
+| `GROQ_API_KEY` | API key de Groq — obtener en [console.groq.com/keys](https://console.groq.com/keys). Free tier: 14.400 req/día sin tarjeta. |
 
 ### Configuración en `application.yml`
 
 ```yaml
-gemini:
-  api-url: https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent
-  api-key: ${GEMINI_API_KEY}
+groq:
+  api-url: https://api.groq.com/openai/v1/chat/completions
+  model: llama-3.1-8b-instant
+  api-key: ${GROQ_API_KEY}
 ```
 
 ### Archivos a crear
 
 ```
 config/
-└── AppConfig.java              → @Bean de RestTemplate
+└── AppConfig.java              → @Bean RestTemplate, @Bean ObjectMapper
 
 busqueda/
-├── GeminiClient.java           → HTTP client para la API de Gemini
-├── BusquedaService.java        → orquesta prompt, llamada a Gemini, filtrado y resolución de IDs
+├── GroqClient.java             → HTTP client para Groq (API compatible con OpenAI)
+├── BusquedaService.java        → construye prompt, llama a Groq, aplica filtros, resuelve IDs
 ├── BusquedaController.java     → POST /menu/buscar
 └── dto/
-    ├── BusquedaRequest.java        → prompt (String)
-    ├── GeminiParseResult.java      → JSON que devuelve Gemini: mensaje, busqueda, caracteristicas, categoria, precioMaximo, ingredientesExcluir
+    ├── BusquedaRequest.java        → prompt (String, @NotBlank)
+    ├── LlmParseResult.java         → parámetros extraídos por el LLM
     ├── BusquedaResponse.java       → mensaje, ingredientesExcluir[], platos[]
     └── IngredienteExcluirInfo.java → id, nombre
 ```
@@ -409,21 +384,36 @@ busqueda/
 
 ### Arquitectura de la búsqueda
 
-El modelo actúa como **parser de intención**, no como fuente de verdad:
+El LLM actúa como **parser de intención**, no como fuente de verdad:
 
-1. `BusquedaService` carga del contexto del menú desde la BD (categorías, características e ingredientes disponibles) e inyecta esa lista en el prompt.
-2. Gemini extrae parámetros estructurados (`categoria`, `caracteristicas`, `busqueda`, `precioMaximo`, `ingredientesExcluir`) usando solo valores que existen en el menú real.
-3. El filtrado ocurre en memoria sobre los platos de la BD — Gemini no filtra nada.
-4. Los nombres de ingredientes a excluir se resuelven a IDs de BD para que el front pueda usarlos directamente en `POST /pedido`.
+1. `BusquedaService` carga el contexto del menú desde la BD (características e ingredientes disponibles) e inyecta esa lista en el prompt.
+2. El LLM extrae parámetros estructurados usando solo valores que existen en el menú real.
+3. El filtrado ocurre en memoria en la aplicación — el LLM no filtra nada.
+4. Los ingredientes a excluir se resuelven a IDs de BD para usarlos directamente en `POST /pedido`.
 
-Cada solicitud es independiente — no hay historial de conversación ni sesión en el servidor.
+Cada solicitud es independiente — sin historial de conversación ni sesión.
+
+### Parámetros que extrae el LLM
+
+| Campo | Operador | Ejemplo |
+|-------|----------|---------|
+| `busqueda` | texto libre | `"quiero hamburguesa"` |
+| `ingredientesRequeridos` | AND — el plato debe tener todos | `"con pollo y arroz"` |
+| `ingredientesCualquiera` | OR — el plato debe tener al menos uno | `"con arepa o pan"` |
+| `caracteristicas` | OR sobre características | `"algo picante"` |
+| `categoria` | igualdad exacta | `"un plato fuerte"` |
+| `precioMaximo` | `<=` | `"menos de 30.000"` |
+| `ingredientesExcluir` | exclusión — solo si es obligatorio | `"sin cebolla"` |
 
 ### Notas de implementación
 
-- `@Transactional(readOnly=true)` en `BusquedaService` es necesario para acceder a `Ingrediente.caracteristicas` (relación lazy).
-- `responseMimeType: application/json` en la request a Gemini fuerza el modelo a responder exclusivamente con JSON válido — elimina el riesgo de texto adicional que rompa el parseo.
-- Si Gemini no responde o el JSON no parsea, el servicio lanza `503 SERVICE_UNAVAILABLE` con un mensaje al usuario.
-- El modelo usado es `gemini-1.5-flash` (capa gratuita de Google AI Studio, sin tarjeta de crédito requerida).
+- `@Transactional(readOnly=true)` en `BusquedaService` mantiene la sesión Hibernate abierta mientras los filtros acceden a `Ingrediente.caracteristicas` (colección lazy).
+- `@BatchSize(size=50)` en `Ingrediente.caracteristicas` evita el N+1: Hibernate carga las características de todos los ingredientes en un solo `IN (...)` en lugar de una query por ingrediente.
+- `PlatoRepository.findAllConCaracteristicas()` usa `JOIN FETCH` para traer platos e ingredientes en una query; las características se cargan en batch aparte (dos queries en total, no N+1).
+- Los filtros de ingredientes también buscan en las **características** del ingrediente: "pescado" encuentra platos cuyo ingrediente tiene la característica "con pescado".
+- `ingredientesExcluir` solo descarta platos donde el ingrediente es **obligatorio**; si es opcional el plato aparece igual y el ID se devuelve al front para pre-seleccionarlo al pedir.
+- `response_format: { type: "json_object" }` en la request a Groq fuerza respuesta JSON válida.
+- Si Groq no responde o el JSON no parsea → `503 SERVICE_UNAVAILABLE`.
 
 ---
 
@@ -436,4 +426,4 @@ Cada solicitud es independiente — no hay historial de conversación ni sesión
 | 3 | Ingrediente + Caracteristica + Plato + PlatoIngrediente | `GET /platos`, `GET /platos/{id}`, `GET /platos/categoria/{cat}` |
 | 4 | Pedido + ItemPedido + EstadoItem | `POST /pedido`, `GET /pedido`, `PATCH /pedido/item/{itemId}/estado`, `DELETE /pedido/{pedidoId}/item/{itemId}` |
 | 5 | Transición de estados | Incluido en el Paso 4 — `PATCH /pedido/item/{itemId}/estado` |
-| 6 | Búsqueda inteligente con Gemini | `POST /menu/buscar` |
+| 6 | Búsqueda inteligente con Groq / Llama | `POST /menu/buscar` |
